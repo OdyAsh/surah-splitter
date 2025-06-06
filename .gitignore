@@ -1,0 +1,16 @@
+# Files
+.vscode/settings.json
+.vscode/*.code-workspace
+*.wav
+*.mp3
+*.zip
+*.txt
+*.xhtml
+*.env
+*.webm
+
+# Folders
+__pycache__/
+data/
+ignore/
+tmp/

@@ -1,0 +1,45 @@
+[project]
+name = "surah-splitter"
+version = "0.1.0"
+description = "A tool to split Surah audio files into individual Ayahs."
+keywords = [
+    "islamic",
+    "islam",
+    "quran",
+    "surah",
+    "ayah",
+    "audio",
+    "splitter",
+    "audio-processing",
+]
+license = { file = "LICENSE" }
+readme = { file = "README.md" }
+authors = [
+    { name = "OdyAsh", email = "ashicsresources@gmail.com" }
+]
+requires-python = ">=3.10,<3.13"
+dependencies = [
+    # Below 2 libraries are only required if you'll run .ipynb
+    #   or .py files as notebooks using "# %%" VSCode cells.
+    "ipykernel>=6.29.5",
+    "jupyter>=1.1.1",
+    # Core dependencies
+    "cyclopts>=3.17.0",
+    "loguru>=0.7.3",
+    "pydub>=0.25.1",
+    "rich>=14.0.0",
+    "whisperx>=3.3.4",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+
+[tool.ruff]
+# General ruff configuration
+line-length = 127
+
+[tool.ruff.format]
+# Disable auto-formatting for specific files
+exclude = ["src/surah_splitter/app/cli.py"]
