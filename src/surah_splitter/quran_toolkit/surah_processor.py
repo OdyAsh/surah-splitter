@@ -67,6 +67,7 @@ def _process_audio_file(
     # Load model and transcribe
     logger.info(f"Loading WhisperX {model_name} model...")
     try:
+        # TODO soon (very): try to load `tarteel-ai/whisper-base-ar-quran` instead of `small`
         model_transcribe = load_model(model_name, device, compute_type=compute_type, language="ar")
     except RuntimeError as e:
         if "Unable to open file 'model.bin' in model" not in str(e):
@@ -85,7 +86,7 @@ def _process_audio_file(
         transcription_file = output_dir / f"{audio_path.stem}_01_transcription.json"
         with open(transcription_file, "w", encoding="utf-8") as f:
             json.dump(initial_transcribed_result, f, ensure_ascii=False, indent=2)
-        logger.info(f"Transcription saved to: {transcription_file}")
+        logger.info(f"01 Transcription saved to: {transcription_file}")
 
     # Clean up model to free memory
     del model_transcribe
@@ -124,7 +125,7 @@ def _process_audio_file(
             alignment_file = output_dir / f"{audio_path.stem}_02_alignment.json"
             with open(alignment_file, "w", encoding="utf-8") as f:
                 json.dump(aligned_result, f, ensure_ascii=False, indent=2)
-            logger.info(f"Alignment saved to: {alignment_file}")
+            logger.info(f"02 Alignment saved to: {alignment_file}")
 
         # Clean up alignment model
         del model_align
@@ -132,27 +133,39 @@ def _process_audio_file(
         if device == "cuda":
             torch.cuda.empty_cache()
     else:
-        aligned_result = initial_transcribed_result  # Use transcription result if alignment unavailable
+        # Use transcription result if alignment unavailable
+        aligned_result = initial_transcribed_result
 
     # Match ayahs to transcription
     logger.info("Matching ayahs to transcription...")
-    ayah_timestamps = match_ayahs_to_transcription(ayahs=ayahs, whisperx_result=aligned_result, audio_data=audio)
+    ayah_timestamps = match_ayahs_to_transcription(
+        ayahs=ayahs,
+        whisperx_result=aligned_result,
+        audio_data=audio,
+        save_intermediates=save_intermediates,
+        output_dir=output_dir if save_intermediates else None,
+        audio_file_stem=audio_path.stem if save_intermediates else None,
+    )
 
     # Convert to dictionary format
     ayah_timestamps_dict = [asdict(ts) for ts in ayah_timestamps]
 
     # Save ayah timestamps
-    possible_file_num = "_03" if save_intermediates else ""
+    possible_file_num = "_final" if save_intermediates else ""
     ayah_file = output_dir / f"{audio_path.stem}{possible_file_num}_ayah_timestamps.json"
     with open(ayah_file, "w", encoding="utf-8") as f:
         json.dump(ayah_timestamps_dict, f, ensure_ascii=False, indent=2)
-    logger.info(f"Ayah timestamps saved to: {ayah_file}")
+    logger.info(f"(Final output) Ayah timestamps saved to: {ayah_file}")
 
     # Display results
-    logger.info("\nAyah Timestamps:")
-    logger.info("-" * 40)
-    for ts in ayah_timestamps:
-        logger.info(f"Ayah {ts.ayah_number}: {ts.start_time:.2f}s - {ts.end_time:.2f}s ({ts.duration:.2f}s)")
+    logger.info("Ayah Timestamps of first and last Ayahs:")
+    if ayah_timestamps:
+        logger.info(
+            f"Ayah {ayah_timestamps[0].ayah_number}: {ayah_timestamps[0].start_time:.2f}s - {ayah_timestamps[0].end_time:.2f}s ({ayah_timestamps[0].duration:.2f}s)"
+        )
+        logger.info(
+            f"Ayah {ayah_timestamps[-1].ayah_number}: {ayah_timestamps[-1].start_time:.2f}s - {ayah_timestamps[-1].end_time:.2f}s ({ayah_timestamps[-1].duration:.2f}s)"
+        )
 
     return ayah_timestamps_dict
 
@@ -211,9 +224,7 @@ def _split_audio_by_ayahs(
         segment.export(str(output_path), format=audio_format)
         output_files.append(output_path)
 
-        logger.debug(f"Exported ayah {ayah_number} to {output_path}")
-
-    logger.info(f"Split {len(output_files)} ayahs to {output_dir}")
+    logger.info(f"Split (and exported) {len(output_files)} ayahs to {output_dir}")
     return output_files
 
 

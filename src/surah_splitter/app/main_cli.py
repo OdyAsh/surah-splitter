@@ -5,7 +5,7 @@ This module provides command-line functionality for processing and splitting Qur
 
 Usage example (terminal):
 ```bash
-    python ./src/surah_splitter/app/cli.py -a "./data/input_surahs_to_split/adel_ryyan/076 Al-Insaan.mp3" -s "76" -r "adel_rayyan"
+    python ./src/surah_splitter/app/main_cli.py -a "./data/input_surahs_to_split/adel_ryyan/076 Al-Insaan.mp3" -s "76" -r "adel_rayyan"
 ```
 """
 

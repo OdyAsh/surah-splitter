@@ -7,13 +7,23 @@ the specific problems outlined in the ayah_words_matching_problem.md document.
 """
 
 import numpy as np
-from typing import List, Dict, Tuple, Optional, Any
+import json
 import re
-from dataclasses import dataclass
+from pathlib import Path
+from typing import List, Dict, Tuple, Optional, Any, Union
+from dataclasses import asdict, dataclass
 
-# TODO soon: Add params for "save_intermediates" which will save intermediate results
-#   and "save_stats" to save statistics about the matching process.
-#   (don't forget to add "_0x_" numbering to the filenames to understand the order of execution)
+from surah_splitter.utils.app_logger import logger
+
+
+@dataclass
+class ReferenceWord:
+    """Represents a word from the ground truth text with position information."""
+
+    word: str
+    ayah_number: int
+    word_location_wrt_ayah: int
+    word_location_wrt_surah: int
 
 
 @dataclass
@@ -33,10 +43,14 @@ class SegmentedWordSpan:
     used in the quran-align C++ implementation but adapted for Python.
     """
 
-    index_start: int  # Start index within ground truth words
-    index_end: int  # End index (exclusive) within ground truth words
+    reference_index_start: int  # Start index within reference (i.e., ground truth) words
+    reference_index_end: int  # End index (exclusive) within reference words
+    reference_words_segment: str  # Segment of reference words (just for tracing purposes)
+
+    input_words_segment: str  # Segment of input (i.e., WhisperX recognized) words (just for tracing purposes)
     start: float  # Start time in seconds
     end: float  # End time in seconds
+
     flags: int = 0  # Flags indicating match quality
 
     # Flag values (matching the C++ impl)
@@ -82,6 +96,9 @@ def align_words(
     input_words: List[RecognizedWord],
     reference_words: List[str],
     stats: SegmentationStats,
+    save_intermediates: bool = False,
+    output_dir: Optional[Union[str, Path]] = None,
+    audio_file_stem: Optional[str] = None,
 ) -> List[SegmentedWordSpan]:
     """
     Align transcribed words with reference words using dynamic programming.
@@ -91,6 +108,9 @@ def align_words(
         input_words: List of words recognized by WhisperX with timing info
         reference_words: List of ground truth words
         stats: Object to track alignment statistics
+        save_intermediates: Whether to save intermediate files
+        output_dir: Directory to save intermediate files (required if save_intermediates is True)
+        audio_file_stem: Stem of the audio file name (required if save_intermediates is True)
 
     Returns:
         List of word spans with timing and alignment information
@@ -152,6 +172,26 @@ def align_words(
 
     NO_MATCH = -1  # Constant for no match
 
+    # Save cost matrix and backtrace matrix if requested
+    if save_intermediates and output_dir and audio_file_stem:
+        # Convert matrices to serializable format
+        cost_matrix_data = cost_matrix.tolist()
+        back_matrix_data = [[str(cell) for cell in row] for row in back_matrix]
+
+        # Save cost matrix
+        cost_matrix_file = Path(output_dir) / f"{audio_file_stem}_05_cost_matrix.json"
+        with open(cost_matrix_file, "w", encoding="utf-8") as f:
+            json.dump(cost_matrix_data, f, indent=2)
+
+        # Save backtrace matrix
+        back_matrix_file = Path(output_dir) / f"{audio_file_stem}_06_back_matrix.json"
+        with open(back_matrix_file, "w", encoding="utf-8") as f:
+            json.dump(back_matrix_data, f, indent=2)
+
+        # Log the matrices
+        logger.info(f"05 Cost matrix saved to: {cost_matrix_file}")
+        logger.info(f"06 Backtrace matrix saved to: {back_matrix_file}")
+
     while i > 0 or j > 0:
         if i > 0 and j > 0 and back_matrix[i, j] == B:
             # Both reference and input words matched
@@ -172,30 +212,32 @@ def align_words(
             break
 
     # Process the alignment to create SegmentedWordSpan objects
-    result = []
+    word_spans_inferred = []
     current_span = None
     in_run = False
 
     for idx, (input_idx, ref_idx) in enumerate(alignment):
-        if input_idx != NO_MATCH and ref_idx != NO_MATCH:
-            input_word = input_words[input_idx]
-            ref_word = reference_words[ref_idx]
+        input_word = input_words[input_idx] if input_idx != NO_MATCH else None
+        ref_word = reference_words[ref_idx] if ref_idx != NO_MATCH else None
 
+        if input_idx != NO_MATCH and ref_idx != NO_MATCH:
             # Check if exact match
             if clean_text(input_word.word) == clean_text(ref_word):
                 # Exact match - close any existing span
                 if in_run:
-                    if current_span.index_end > current_span.index_start:
+                    if current_span.reference_index_end > current_span.reference_index_start:
                         if not current_span.end:
                             current_span.end = input_word.start
-                        result.append(current_span)
+                        word_spans_inferred.append(current_span)
                     in_run = False
 
                 # Create a new span just for this word
-                result.append(
+                word_spans_inferred.append(
                     SegmentedWordSpan(
-                        index_start=ref_idx,
-                        index_end=ref_idx + 1,
+                        reference_index_start=ref_idx,
+                        reference_index_end=ref_idx + 1,
+                        reference_words_segment=ref_word,
+                        input_words_segment=input_word.word,
                         start=input_word.start,
                         end=input_word.end,
                         flags=SegmentedWordSpan.MATCHED_INPUT | SegmentedWordSpan.MATCHED_REFERENCE | SegmentedWordSpan.EXACT,
@@ -206,8 +248,10 @@ def align_words(
                 if not in_run:
                     in_run = True
                     current_span = SegmentedWordSpan(
-                        index_start=ref_idx,
-                        index_end=ref_idx + 1,
+                        reference_index_start=ref_idx,
+                        reference_index_end=ref_idx + 1,
+                        reference_words_segment=ref_word,
+                        input_words_segment=input_word.word,
                         start=input_word.start,
                         end=input_word.end,
                         flags=SegmentedWordSpan.MATCHED_INPUT
@@ -216,7 +260,9 @@ def align_words(
                     )
                 else:
                     # Extend the current span
-                    current_span.index_end = ref_idx + 1
+                    current_span.reference_index_end = ref_idx + 1
+                    current_span.reference_words_segment += f" {ref_word}"
+                    current_span.input_words_segment += f" {input_word.word}"
                     current_span.end = input_word.end
                     current_span.flags |= (
                         SegmentedWordSpan.MATCHED_INPUT | SegmentedWordSpan.MATCHED_REFERENCE | SegmentedWordSpan.INEXACT
@@ -226,14 +272,14 @@ def align_words(
 
         elif input_idx != NO_MATCH:
             # Input word but no reference word (insertion)
-            input_word = input_words[input_idx]
-
             # Start a new span for tracking timing
             if not in_run:
                 in_run = True
                 current_span = SegmentedWordSpan(
-                    index_start=NO_MATCH,
-                    index_end=NO_MATCH,
+                    reference_index_start=NO_MATCH,
+                    reference_index_end=NO_MATCH,
+                    reference_words_segment="",
+                    input_words_segment=input_word.word,
                     start=input_word.start,
                     end=input_word.end,
                     flags=SegmentedWordSpan.MATCHED_INPUT,
@@ -241,6 +287,7 @@ def align_words(
             else:
                 # Extend the current span
                 current_span.end = input_word.end
+                current_span.input_words_segment += f" {input_word.word}"
                 current_span.flags |= SegmentedWordSpan.MATCHED_INPUT
 
         elif ref_idx != NO_MATCH:
@@ -249,37 +296,99 @@ def align_words(
             if not in_run:
                 in_run = True
                 prev_end = 0
-                if result:
-                    prev_end = result[-1].end
+                if word_spans_inferred:
+                    prev_end = word_spans_inferred[-1].end
 
                 current_span = SegmentedWordSpan(
-                    index_start=ref_idx,
-                    index_end=ref_idx + 1,
+                    reference_index_start=ref_idx,
+                    reference_index_end=ref_idx + 1,
+                    reference_words_segment=ref_word,
+                    input_words_segment="",
                     start=prev_end,
                     end=0,
                     flags=SegmentedWordSpan.MATCHED_REFERENCE,
                 )
             else:
                 # Extend the current span
-                if current_span.index_start == NO_MATCH:
-                    current_span.index_start = ref_idx
-                current_span.index_end = ref_idx + 1
+                if current_span.reference_index_start == NO_MATCH:
+                    current_span.reference_index_start = ref_idx
+                current_span.reference_index_end = ref_idx + 1
+                current_span.reference_words_segment += f" {ref_word}"
                 current_span.flags |= SegmentedWordSpan.MATCHED_REFERENCE
 
     # Close any open span
-    if in_run and current_span and current_span.index_end > current_span.index_start:
-        result.append(current_span)
+    if in_run and current_span and current_span.reference_index_end > current_span.reference_index_start:
+        word_spans_inferred.append(current_span)
 
-    return result
+    # Save alignment and result spans if requested
+    if save_intermediates and output_dir and audio_file_stem:
+        # Save alignment
+        alignment_file = Path(output_dir) / f"{audio_file_stem}_07_alignment_ij_indices.json"
+        # Convert alignment to serializable format - replacing NO_MATCH with null
+        alignment_data = [
+            [idx_i if idx_i != NO_MATCH else None, idx_j if idx_j != NO_MATCH else None] for idx_i, idx_j in alignment
+        ]
+        with open(alignment_file, "w", encoding="utf-8") as f:
+            json.dump(alignment_data, f, ensure_ascii=False, indent=2)
+
+        # Save result spans
+        result_spans_file = Path(output_dir) / f"{audio_file_stem}_08_word_spans.json"
+        word_spans_inferred_as_json = [
+            {
+                "reference_index_start": span.reference_index_start if span.reference_index_start != NO_MATCH else None,
+                "reference_index_end": span.reference_index_end if span.reference_index_end != NO_MATCH else None,
+                "reference_words_segment": span.reference_words_segment,
+                "input_words_segment": span.input_words_segment,
+                "start": span.start,
+                "end": span.end,
+                "flags": span.flags,
+                # Include flag information for clarity
+                "flags_info": {
+                    "matched_input": bool(span.flags & SegmentedWordSpan.MATCHED_INPUT),
+                    "matched_reference": bool(span.flags & SegmentedWordSpan.MATCHED_REFERENCE),
+                    "exact": bool(span.flags & SegmentedWordSpan.EXACT),
+                    "inexact": bool(span.flags & SegmentedWordSpan.INEXACT),
+                },
+            }
+            for span in word_spans_inferred
+        ]
+        with open(result_spans_file, "w", encoding="utf-8") as f:
+            json.dump(word_spans_inferred_as_json, f, ensure_ascii=False, indent=2)
+
+        # Save stats
+        stats_file = Path(output_dir) / f"{audio_file_stem}_09_alignment_stats.json"
+        with open(stats_file, "w", encoding="utf-8") as f:
+            json.dump(
+                {"insertions": stats.insertions, "deletions": stats.deletions, "transpositions": stats.transpositions},
+                f,
+                ensure_ascii=False,
+                indent=2,
+            )
+
+        # Log the saved files
+        logger.info(f"07 Alignment i-j indices saved to: {alignment_file}")
+        logger.info(f"08 Result spans saved to: {result_spans_file}")
+        logger.info(f"09 Stats saved to: {stats_file}")
+
+    return word_spans_inferred
 
 
-def detect_silence_periods(audio_data: np.ndarray, sample_rate: int = 16000) -> List[Tuple[float, float]]:
+def detect_silence_periods(
+    audio_data: np.ndarray,
+    sample_rate: int = 16000,
+    save_intermediates: bool = False,
+    output_dir: Optional[Union[str, Path]] = None,
+    audio_file_stem: Optional[str] = None,
+) -> List[Tuple[float, float]]:
     """
     Detect silence periods in audio, similar to the C++ function discriminate_silence_periods.
 
     Args:
         audio_data: Audio samples as numpy array
         sample_rate: Sample rate of the audio (default: 16000 Hz)
+        save_intermediates: Whether to save intermediate results
+        output_dir: Directory to save intermediate files (required if save_intermediates is True)
+        audio_file_stem: Stem of the audio file name (required if save_intermediates is True)
 
     Returns:
         List of (start_time, end_time) tuples for silence periods
@@ -317,10 +426,20 @@ def detect_silence_periods(audio_data: np.ndarray, sample_rate: int = 16000) -> 
         silence_end = len(audio_data) / sample_rate
         silences.append((silence_start, silence_end))
 
+    # Save power data and silence periods if requested
+    if save_intermediates and output_dir and audio_file_stem:
+        # Save silence periods
+        silence_file = Path(output_dir) / f"{audio_file_stem}_11_silence_periods.json"
+        with open(silence_file, "w", encoding="utf-8") as f:
+            json.dump(silences, f, ensure_ascii=False, indent=2)
+
+        # Log the saved files
+        logger.info(f"10 Silence periods saved to: {silence_file}")
+
     return silences
 
 
-def transform_ayahs_to_words(ayahs: List[str]) -> List[Dict[str, Any]]:
+def transform_ayahs_to_words(ayahs: List[str]) -> List[ReferenceWord]:
     """
     Transform list of ayahs to word-level data with position information.
 
@@ -328,7 +447,7 @@ def transform_ayahs_to_words(ayahs: List[str]) -> List[Dict[str, Any]]:
         ayahs: List of ayah texts
 
     Returns:
-        List of dicts with word information
+        List of ReferenceWord objects with position information
     """
     all_surah_words = []
     word_location_wrt_surah = 1
@@ -339,12 +458,12 @@ def transform_ayahs_to_words(ayahs: List[str]) -> List[Dict[str, Any]]:
 
         for word_location_wrt_ayah, word in enumerate(words, 1):
             all_surah_words.append(
-                {
-                    "word": word,
-                    "ayah_number": ayah_number,
-                    "word_location_wrt_ayah": word_location_wrt_ayah,
-                    "word_location_wrt_surah": word_location_wrt_surah,
-                }
+                ReferenceWord(
+                    word=word,
+                    ayah_number=ayah_number,
+                    word_location_wrt_ayah=word_location_wrt_ayah,
+                    word_location_wrt_surah=word_location_wrt_surah,
+                )
             )
             word_location_wrt_surah += 1
 
@@ -355,6 +474,9 @@ def match_ayahs_to_transcription(
     ayahs: List[str],
     whisperx_result: Dict[str, Any],
     audio_data: Optional[np.ndarray] = None,
+    save_intermediates: bool = False,
+    output_dir: Optional[Union[str, Path]] = None,
+    audio_file_stem: Optional[str] = None,
 ) -> List[AyahTimestamp]:
     """
     Match ayahs to transcription using word alignment.
@@ -363,50 +485,78 @@ def match_ayahs_to_transcription(
         ayahs: List of ayah texts
         whisperx_result: Result from WhisperX with word timestamps
         audio_data: Optional audio data for silence detection
+        save_intermediates: Whether to save intermediate files during processing
+        output_dir: Directory to save intermediate files (required if save_intermediates is True)
+        audio_file_stem: Stem of the audio file for naming intermediate files (required if save_intermediates is True)
 
     Returns:
         List of ayah timestamps
     """
+
+    if "word_segments" not in whisperx_result:
+        raise ValueError("WhisperX result must contain 'word_segments' key.")
+
     # Extract all words with timestamps from WhisperX result
-    # TODO later: remove all these conditions, and assume word_segments/word/start/end keys exists (i.e., first `if`)
     all_recognized_words = []
-    if "word_segments" in whisperx_result:
-        for word in whisperx_result["word_segments"]:
-            if "word" in word and "start" in word and "end" in word:
-                all_recognized_words.append(
-                    RecognizedWord(
-                        word=word["word"],
-                        start=word["start"],
-                        end=word["end"],
-                        score=word.get("score", 1.0),
-                    )
-                )
-    else:
-        # Extract from segments if word_segments not available
-        for segment in whisperx_result.get("segments", []):
-            if "words" in segment:
-                for word in segment["words"]:
-                    if "word" in word and "start" in word and "end" in word:
-                        all_recognized_words.append(
-                            RecognizedWord(
-                                word=word["word"],
-                                start=word["start"],
-                                end=word["end"],
-                                score=word.get("score", 1.0),
-                            )
-                        )
+    for word in whisperx_result["word_segments"]:
+        all_recognized_words.append(
+            RecognizedWord(
+                word=word["word"],
+                start=word["start"],
+                end=word["end"],
+                score=word.get("score", 1.0),
+            )
+        )
 
     # Transform ayahs into word-level ground truth
     all_surah_words = transform_ayahs_to_words(ayahs)
-    reference_words = [word_data["word"] for word_data in all_surah_words]
+    reference_words = [word_data.word for word_data in all_surah_words]
+
+    # If save_intermediates is True, validate required parameters
+    if save_intermediates:
+        if not output_dir or not audio_file_stem:
+            raise ValueError("output_dir and audio_file_stem are required when save_intermediates is True")
+
+        # Ensure output_dir is a Path object
+        if not isinstance(output_dir, Path):
+            output_dir = Path(output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        # Save recognized words
+        recognized_words_file = output_dir / f"{audio_file_stem}_03_recognized_words.json"
+        with open(recognized_words_file, "w", encoding="utf-8") as f:
+            json.dump(
+                [{"word": w.word, "start": w.start, "end": w.end, "score": w.score} for w in all_recognized_words],
+                f,
+                ensure_ascii=False,
+                indent=2,
+            )
+
+        # Save reference words
+        reference_words_file = output_dir / f"{audio_file_stem}_04_reference_words.json"
+        with open(reference_words_file, "w", encoding="utf-8") as f:
+            json.dump([asdict(word) for word in all_surah_words], f, ensure_ascii=False, indent=2)
+
+        # Log the saved files
+        logger.info(f"03 Recognized words saved to: {recognized_words_file}")
+        logger.info(f"04 Reference words saved to: {reference_words_file}")
 
     # Perform alignment
     stats = SegmentationStats()
-    aligned_spans = align_words(all_recognized_words, reference_words, stats)
-
+    aligned_spans = align_words(
+        all_recognized_words,
+        reference_words,
+        stats,
+        save_intermediates,
+        output_dir,
+        audio_file_stem,
+    )
     # If audio data is available, use it to improve alignment
     if audio_data is not None:
-        silence_periods = detect_silence_periods(audio_data)
+        silence_periods = detect_silence_periods(
+            audio_data, save_intermediates=save_intermediates, output_dir=output_dir, audio_file_stem=audio_file_stem
+        )
+
         # Adjust spans based on silence
         for i, span in enumerate(aligned_spans):
             # Find next silence after the end of this span
@@ -429,14 +579,14 @@ def match_ayahs_to_transcription(
             return 0
         for i, word_data in enumerate(all_surah_words):
             if i == word_index:
-                return word_data["ayah_number"]
+                return word_data.ayah_number
         return len(ayahs)  # Beyond last ayah
 
     # Process each span
     for span in aligned_spans:
-        if span.index_start >= 0:
+        if span.reference_index_start >= 0:
             # Find ayah for this span
-            span_ayah = find_ayah_for_word_index(span.index_start)
+            span_ayah = find_ayah_for_word_index(span.reference_index_start)
 
             if span_ayah != current_ayah:
                 # Save previous ayah if we have one
