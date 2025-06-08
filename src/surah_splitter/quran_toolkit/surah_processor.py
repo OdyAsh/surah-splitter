@@ -67,7 +67,6 @@ def _process_audio_file(
     # Load model and transcribe
     logger.info(f"Loading WhisperX {model_name} model...")
     try:
-        # TODO soon (very): try to load `tarteel-ai/whisper-base-ar-quran` instead of `small`
         model_transcribe = load_model(model_name, device, compute_type=compute_type, language="ar")
     except RuntimeError as e:
         if "Unable to open file 'model.bin' in model" not in str(e):

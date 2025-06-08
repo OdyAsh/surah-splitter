@@ -233,7 +233,7 @@ def process(
     surah: Annotated[int, Parameter(name=["--surah", "-s"], validator=validators.Number(gte=1, lte=114))],
     ######### Optional args #########
     reciter: Annotated[str, Parameter(name=["--reciter", "-r"])] = "",
-    model_name: Annotated[str, Parameter(name=["--model-name", "-mn"])] = "",
+    model_name: Annotated[str, Parameter(name=["--model-name", "-mn"])] = "OdyAsh/faster-whisper-base-ar-quran",
     model_size: Annotated[Literal["tiny", "small", "medium", "large"], Parameter(name=["--model-size", "-ms"])] = "small",
     device: Annotated[Literal["cuda", "cpu"], Parameter(name=["--device", "-d"])] = None,
     quran_data: Annotated[Optional[Path], Parameter(name=["--quran-data", "-q"])] = None,
@@ -285,7 +285,7 @@ def process(
             save_intermediates=save_intermediates,
         )
 
-        logger.info("Processing completed successfully!")
+        logger.success("Processing completed successfully!")
         return 0
     except Exception as e:
         logger.exception(f"Error: {e}")
