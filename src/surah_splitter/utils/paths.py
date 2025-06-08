@@ -7,5 +7,6 @@ from pathlib import Path
 PROJECT_ROOT_PATH = Path(__file__).resolve().parent.parent.parent.parent
 
 SURAH_INPUTS_PATH = PROJECT_ROOT_PATH / "data" / "input_surahs_to_split"
+QURAN_METADATA_PATH = PROJECT_ROOT_PATH / "data" / "quran_metadata"
 OUTPUTS_PATH = PROJECT_ROOT_PATH / "data" / "outputs"
 LOGS_PATH = PROJECT_ROOT_PATH / "logs"

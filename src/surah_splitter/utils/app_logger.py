@@ -36,7 +36,7 @@ def setup_logger(
         format_string = (
             "<green>{time:YYYY-MM-DD HH:mm:ss}</green> | "
             "<level>{level}</level> | "
-            "<blue>{file.name}</blue>:<cyan>{line}</cyan> <blue>[{function}()]</blue> | "
+            "<blue>{file.name}</blue>:<cyan>{line}</cyan> <magenta>[{function}()]</magenta> | "
             "<level>{message}</level>"
         )
 

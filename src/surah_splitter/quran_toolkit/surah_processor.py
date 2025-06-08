@@ -16,6 +16,7 @@ import torch
 import gc
 from pydub import AudioSegment
 from dataclasses import asdict
+import shutil
 
 from surah_splitter.quran_toolkit.ayah_matcher import match_ayahs_to_transcription
 from surah_splitter.utils.app_logger import logger
@@ -35,7 +36,7 @@ def _process_audio_file(
     Args:
         audio_path: Path to the audio file
         ayahs: List of ground truth ayah texts
-        output_dir: Directory to save outputs
+        output_dir: Directory to save timestamp outputs (e.g., outputs/reciter/timestamps/001/)
         model_name: WhisperX model name or size
         device: Device to use for processing (cuda or cpu)
         save_intermediates: Whether to save intermediate files
@@ -46,8 +47,6 @@ def _process_audio_file(
     # Set up paths
     audio_path = Path(audio_path)
     output_dir = Path(output_dir)
-    # TODO later: if saving issues occur, set parents=True
-    output_dir.mkdir(parents=False, exist_ok=True)
 
     # Setup device
     if device is None:
@@ -76,13 +75,20 @@ def _process_audio_file(
         model_transcribe = load_model(model_path, device, compute_type=compute_type, language="ar")
 
     logger.info("Transcribing audio...")
-    initial_transcribed_result = model_transcribe.transcribe(audio, batch_size=batch_size, language="ar")
+    initial_transcribed_result = model_transcribe.transcribe(
+        audio,
+        batch_size=batch_size,
+        language="ar",
+        print_progress=True,
+        combined_progress=True,
+        verbose=True,
+    )
     logger.info("Transcription completed!")
     logger.debug(f"Detected language: {initial_transcribed_result['language']}")
     logger.debug(f"Number of segments: {len(initial_transcribed_result['segments'])}")
 
     if save_intermediates:
-        transcription_file = output_dir / f"{audio_path.stem}_01_transcription.json"
+        transcription_file = output_dir / "01_transcription.json"
         with open(transcription_file, "w", encoding="utf-8") as f:
             json.dump(initial_transcribed_result, f, ensure_ascii=False, indent=2)
         logger.info(f"01 Transcription saved to: {transcription_file}")
@@ -114,6 +120,8 @@ def _process_audio_file(
             audio,
             device,
             return_char_alignments=False,
+            print_progress=True,
+            combined_progress=True,
         )
 
         logger.info("Alignment completed!")
@@ -121,7 +129,7 @@ def _process_audio_file(
             logger.debug(f"Number of aligned segments: {len(aligned_result['segments'])}")
 
         if save_intermediates:
-            alignment_file = output_dir / f"{audio_path.stem}_02_alignment.json"
+            alignment_file = output_dir / "02_alignment.json"
             with open(alignment_file, "w", encoding="utf-8") as f:
                 json.dump(aligned_result, f, ensure_ascii=False, indent=2)
             logger.info(f"02 Alignment saved to: {alignment_file}")
@@ -143,15 +151,15 @@ def _process_audio_file(
         audio_data=audio,
         save_intermediates=save_intermediates,
         output_dir=output_dir if save_intermediates else None,
-        audio_file_stem=audio_path.stem if save_intermediates else None,
+        # audio_file_stem removed, assuming ayah_matcher.py is adapted
     )
 
     # Convert to dictionary format
     ayah_timestamps_dict = [asdict(ts) for ts in ayah_timestamps]
 
     # Save ayah timestamps
-    possible_file_num = "_final" if save_intermediates else ""
-    ayah_file = output_dir / f"{audio_path.stem}{possible_file_num}_ayah_timestamps.json"
+    possible_prefix = "final_" if save_intermediates else ""
+    ayah_file = output_dir / f"{possible_prefix}ayah_timestamps.json"
     with open(ayah_file, "w", encoding="utf-8") as f:
         json.dump(ayah_timestamps_dict, f, ensure_ascii=False, indent=2)
     logger.info(f"(Final output) Ayah timestamps saved to: {ayah_file}")
@@ -174,7 +182,6 @@ def _split_audio_by_ayahs(
     ayah_timestamps: List[Dict[str, Any]],
     output_dir: Union[str, Path],
     file_prefix: str = "",
-    file_suffix: str = "",
     audio_format: str = "mp3",
 ) -> List[Path]:
     """
@@ -183,9 +190,8 @@ def _split_audio_by_ayahs(
     Args:
         audio_path: Path to the audio file
         ayah_timestamps: List of ayah timestamp dictionaries
-        output_dir: Directory to save split audio files
-        file_prefix: Prefix for output files
-        file_suffix: Suffix for output files
+        output_dir: Directory to save split audio files (e.g., outputs/reciter/ayah_audios/001/)
+        file_prefix: Prefix for output files (e.g., "001_" for Surah 001)
         audio_format: Format for output audio files (mp3, wav, etc.)
 
     Returns:
@@ -193,7 +199,6 @@ def _split_audio_by_ayahs(
     """
     audio_path = Path(audio_path)
     output_dir = Path(output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
 
     # Load the audio file
     logger.info(f"Loading audio for splitting: {audio_path}")
@@ -216,7 +221,8 @@ def _split_audio_by_ayahs(
         ayah_str = str(ayah_number).zfill(3)
 
         # Create output filename
-        filename = f"{file_prefix}{ayah_str}{file_suffix}.{audio_format}"
+        # file_suffix is removed from here
+        filename = f"{file_prefix}{ayah_str}.{audio_format}"  # e.g., 001_001.mp3
         output_path = output_dir / filename
 
         # Export segment
@@ -232,10 +238,11 @@ def process_surah(
     ayahs: List[str],
     output_dir: Union[str, Path],
     surah_number: int,
-    reciter_name: str = "",
+    reciter_name: str,
     model_name: str = "small",
     device: str = None,
     save_intermediates: bool = False,
+    save_incoming_surah_audio: bool = True,
 ) -> Tuple[List[Dict[str, Any]], List[Path]]:
     """
     Process a complete surah audio file, transcribe it, match ayahs, and split into individual ayahs.
@@ -243,7 +250,7 @@ def process_surah(
     Args:
         audio_path: Path to the surah audio file
         ayahs: List of ground truth ayah texts
-        output_dir: Directory to save outputs
+        output_dir: Base directory to save outputs (e.g., data/outputs)
         surah_number: The number of the surah
         reciter_name: Name of the reciter
         model_name: WhisperX model name (or size) to use
@@ -257,19 +264,32 @@ def process_surah(
     logger.info(f"Audio file: {audio_path}")
     logger.debug(f"Number of ayahs: {len(ayahs)}")
 
-    # Create output directories
-    output_dir = Path(output_dir)
-    timestamps_dir = output_dir / "timestamps"
-    ayah_audio_dir = output_dir / "ayah_audio" / f"{surah_number:03d}"
+    # Normalize reciter name and create base output directory for the reciter
+    normalized_reciter_name = reciter_name.lower().replace(" ", "_").replace("-", "_")
+    base_reciter_output_dir = Path(output_dir) / normalized_reciter_name
 
-    timestamps_dir.mkdir(parents=True, exist_ok=True)
-    ayah_audio_dir.mkdir(parents=True, exist_ok=True)
+    # Define specific output directories based on the new structure
+    surah_audio_output_dir = base_reciter_output_dir / "surah_audios"
+    timestamps_output_dir_for_surah = base_reciter_output_dir / "timestamps" / f"{surah_number:03d}"
+    ayah_audio_output_dir_for_surah = base_reciter_output_dir / "ayah_audios" / f"{surah_number:03d}"
+
+    # Create all necessary output directories
+    if save_incoming_surah_audio:
+        surah_audio_output_dir.mkdir(parents=True, exist_ok=True)
+    timestamps_output_dir_for_surah.mkdir(parents=True, exist_ok=True)
+    ayah_audio_output_dir_for_surah.mkdir(parents=True, exist_ok=True)
+
+    if save_incoming_surah_audio:
+        # Copy original surah audio to the new location
+        target_surah_audio_path = surah_audio_output_dir / f"{surah_number:03d}{Path(audio_path).suffix}"
+        shutil.copy(Path(audio_path), target_surah_audio_path)
+        logger.info(f"Copied original surah audio to: {target_surah_audio_path}")
 
     # Process audio to get ayah timestamps
     ayah_timestamps = _process_audio_file(
         audio_path=audio_path,
         ayahs=ayahs,
-        output_dir=timestamps_dir,
+        output_dir=timestamps_output_dir_for_surah,
         model_name=model_name,
         device=device,
         save_intermediates=save_intermediates,
@@ -277,18 +297,13 @@ def process_surah(
 
     # Format the file prefix for split audio files
     file_prefix = f"{surah_number:03d}_"
-    if reciter_name:
-        file_suffix = f"_{reciter_name}"
-    else:
-        file_suffix = ""
 
     # Split the audio file into individual ayahs
     output_files = _split_audio_by_ayahs(
         audio_path=audio_path,
         ayah_timestamps=ayah_timestamps,
-        output_dir=ayah_audio_dir,
+        output_dir=ayah_audio_output_dir_for_surah,
         file_prefix=file_prefix,
-        file_suffix=file_suffix,
     )
 
     return ayah_timestamps, output_files

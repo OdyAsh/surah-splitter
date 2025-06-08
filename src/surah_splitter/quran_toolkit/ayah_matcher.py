@@ -83,10 +83,11 @@ class AyahTimestamp:
 
 def clean_text(text: str) -> str:
     """Clean Arabic text by removing diacritics and non-Arabic characters."""
-    # Remove diacritics (tashkeel)
-    text = re.sub(r"[\u064B-\u065F\u0670]", "", text)
-    # Keep only Arabic letters and spaces
-    text = re.sub(r"[^\u0600-\u06FF\s]", "", text)
+    # Keep only specified Arabic letters and spaces
+    # Check this for details:
+    #   https://jrgraphix.net/r/Unicode/0600-06FF
+    text = re.sub(r"[^\u060f\u0620-\u064a\u066e\u066f\u0671-\u06d3\u06d5\s]", "", text)
+
     # Normalize spaces
     text = re.sub(r"\s+", " ", text).strip()
     return text
@@ -98,7 +99,6 @@ def align_words(
     stats: SegmentationStats,
     save_intermediates: bool = False,
     output_dir: Optional[Union[str, Path]] = None,
-    audio_file_stem: Optional[str] = None,
 ) -> List[SegmentedWordSpan]:
     """
     Align transcribed words with reference words using dynamic programming.
@@ -110,7 +110,6 @@ def align_words(
         stats: Object to track alignment statistics
         save_intermediates: Whether to save intermediate files
         output_dir: Directory to save intermediate files (required if save_intermediates is True)
-        audio_file_stem: Stem of the audio file name (required if save_intermediates is True)
 
     Returns:
         List of word spans with timing and alignment information
@@ -173,18 +172,18 @@ def align_words(
     NO_MATCH = -1  # Constant for no match
 
     # Save cost matrix and backtrace matrix if requested
-    if save_intermediates and output_dir and audio_file_stem:
+    if save_intermediates and output_dir:
         # Convert matrices to serializable format
         cost_matrix_data = cost_matrix.tolist()
         back_matrix_data = [[str(cell) for cell in row] for row in back_matrix]
 
         # Save cost matrix
-        cost_matrix_file = Path(output_dir) / f"{audio_file_stem}_05_cost_matrix.json"
+        cost_matrix_file = Path(output_dir) / "05_cost_matrix.json"
         with open(cost_matrix_file, "w", encoding="utf-8") as f:
             json.dump(cost_matrix_data, f, indent=2)
 
         # Save backtrace matrix
-        back_matrix_file = Path(output_dir) / f"{audio_file_stem}_06_back_matrix.json"
+        back_matrix_file = Path(output_dir) / "06_back_matrix.json"
         with open(back_matrix_file, "w", encoding="utf-8") as f:
             json.dump(back_matrix_data, f, indent=2)
 
@@ -321,9 +320,9 @@ def align_words(
         word_spans_inferred.append(current_span)
 
     # Save alignment and result spans if requested
-    if save_intermediates and output_dir and audio_file_stem:
+    if save_intermediates and output_dir:
         # Save alignment
-        alignment_file = Path(output_dir) / f"{audio_file_stem}_07_alignment_ij_indices.json"
+        alignment_file = Path(output_dir) / "07_alignment_ij_indices.json"
         # Convert alignment to serializable format - replacing NO_MATCH with null
         alignment_data = [
             [idx_i if idx_i != NO_MATCH else None, idx_j if idx_j != NO_MATCH else None] for idx_i, idx_j in alignment
@@ -332,7 +331,7 @@ def align_words(
             json.dump(alignment_data, f, ensure_ascii=False, indent=2)
 
         # Save result spans
-        result_spans_file = Path(output_dir) / f"{audio_file_stem}_08_word_spans.json"
+        result_spans_file = Path(output_dir) / "08_word_spans.json"
         word_spans_inferred_as_json = [
             {
                 "reference_index_start": span.reference_index_start if span.reference_index_start != NO_MATCH else None,
@@ -356,7 +355,7 @@ def align_words(
             json.dump(word_spans_inferred_as_json, f, ensure_ascii=False, indent=2)
 
         # Save stats
-        stats_file = Path(output_dir) / f"{audio_file_stem}_09_alignment_stats.json"
+        stats_file = Path(output_dir) / "09_alignment_stats.json"
         with open(stats_file, "w", encoding="utf-8") as f:
             json.dump(
                 {"insertions": stats.insertions, "deletions": stats.deletions, "transpositions": stats.transpositions},
@@ -378,7 +377,6 @@ def detect_silence_periods(
     sample_rate: int = 16000,
     save_intermediates: bool = False,
     output_dir: Optional[Union[str, Path]] = None,
-    audio_file_stem: Optional[str] = None,
 ) -> List[Tuple[float, float]]:
     """
     Detect silence periods in audio, similar to the C++ function discriminate_silence_periods.
@@ -388,7 +386,6 @@ def detect_silence_periods(
         sample_rate: Sample rate of the audio (default: 16000 Hz)
         save_intermediates: Whether to save intermediate results
         output_dir: Directory to save intermediate files (required if save_intermediates is True)
-        audio_file_stem: Stem of the audio file name (required if save_intermediates is True)
 
     Returns:
         List of (start_time, end_time) tuples for silence periods
@@ -427,9 +424,9 @@ def detect_silence_periods(
         silences.append((silence_start, silence_end))
 
     # Save power data and silence periods if requested
-    if save_intermediates and output_dir and audio_file_stem:
+    if save_intermediates and output_dir:
         # Save silence periods
-        silence_file = Path(output_dir) / f"{audio_file_stem}_11_silence_periods.json"
+        silence_file = Path(output_dir) / "10_silence_periods.json"
         with open(silence_file, "w", encoding="utf-8") as f:
             json.dump(silences, f, ensure_ascii=False, indent=2)
 
@@ -476,7 +473,6 @@ def match_ayahs_to_transcription(
     audio_data: Optional[np.ndarray] = None,
     save_intermediates: bool = False,
     output_dir: Optional[Union[str, Path]] = None,
-    audio_file_stem: Optional[str] = None,
 ) -> List[AyahTimestamp]:
     """
     Match ayahs to transcription using word alignment.
@@ -487,7 +483,6 @@ def match_ayahs_to_transcription(
         audio_data: Optional audio data for silence detection
         save_intermediates: Whether to save intermediate files during processing
         output_dir: Directory to save intermediate files (required if save_intermediates is True)
-        audio_file_stem: Stem of the audio file for naming intermediate files (required if save_intermediates is True)
 
     Returns:
         List of ayah timestamps
@@ -514,8 +509,8 @@ def match_ayahs_to_transcription(
 
     # If save_intermediates is True, validate required parameters
     if save_intermediates:
-        if not output_dir or not audio_file_stem:
-            raise ValueError("output_dir and audio_file_stem are required when save_intermediates is True")
+        if not output_dir:
+            raise ValueError("output_dir is required when save_intermediates is True")
 
         # Ensure output_dir is a Path object
         if not isinstance(output_dir, Path):
@@ -523,7 +518,7 @@ def match_ayahs_to_transcription(
         output_dir.mkdir(parents=True, exist_ok=True)
 
         # Save recognized words
-        recognized_words_file = output_dir / f"{audio_file_stem}_03_recognized_words.json"
+        recognized_words_file = output_dir / "03_recognized_words.json"
         with open(recognized_words_file, "w", encoding="utf-8") as f:
             json.dump(
                 [{"word": w.word, "start": w.start, "end": w.end, "score": w.score} for w in all_recognized_words],
@@ -533,7 +528,7 @@ def match_ayahs_to_transcription(
             )
 
         # Save reference words
-        reference_words_file = output_dir / f"{audio_file_stem}_04_reference_words.json"
+        reference_words_file = output_dir / "04_reference_words.json"
         with open(reference_words_file, "w", encoding="utf-8") as f:
             json.dump([asdict(word) for word in all_surah_words], f, ensure_ascii=False, indent=2)
 
@@ -549,13 +544,10 @@ def match_ayahs_to_transcription(
         stats,
         save_intermediates,
         output_dir,
-        audio_file_stem,
     )
     # If audio data is available, use it to improve alignment
     if audio_data is not None:
-        silence_periods = detect_silence_periods(
-            audio_data, save_intermediates=save_intermediates, output_dir=output_dir, audio_file_stem=audio_file_stem
-        )
+        silence_periods = detect_silence_periods(audio_data, save_intermediates=save_intermediates, output_dir=output_dir)
 
         # Adjust spans based on silence
         for i, span in enumerate(aligned_spans):

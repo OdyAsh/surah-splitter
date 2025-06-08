@@ -1,16 +1,16 @@
 # Files
 .vscode/settings.json
 .vscode/*.code-workspace
-*.wav
-*.mp3
-*.zip
-*.txt
-*.xhtml
-*.env
-*.webm
 
 # Folders
 __pycache__/
-data/
+
+# You have to do this weird syntax to ignore all files in `data` except for a file `surah_to_simple_ayahs.json` in one its subfolders.
+data/*
+!data/quran_metadata/
+data/quran_metadata/*
+!data/quran_metadata/surah_to_simple_ayahs.json
+!data/quran_metadata/sources.md
+
 ignore/
 tmp/
