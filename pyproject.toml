@@ -40,6 +40,11 @@ build-backend = "hatchling.build"
 # General ruff configuration
 line-length = 127
 
+# Disable specific rules for specific files
+[tool.ruff.lint.per-file-ignores]
+"**/transcription_service.py" = ["E402"]  # Allow imports not at top of file in transcription_service.py
+
+
 [tool.ruff.format]
 # Disable auto-formatting for specific files
 exclude = ["src/surah_splitter/app/cli.py"]
