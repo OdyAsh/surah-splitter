@@ -15,7 +15,7 @@ _runtime._is_google_colab = False
 
 from surah_splitter_new.models.transcription import Transcription, RecognizedWordSegment
 from surah_splitter_new.utils.app_logger import logger, LoggerTimingContext
-from surah_splitter_new.utils.file_utils import save_intermediate_json
+from surah_splitter_new.utils.file_utils import save_intermediate_json, load_json
 
 
 class TranscriptionService:
@@ -105,6 +105,8 @@ class TranscriptionService:
 
         # Perform transcription
         with LoggerTimingContext("Transcribing audio", succ_log=True):
+            # Comment/uncomment accordingly if you're testing
+            # trans_result = load_json(output_dir / "01_transcription.json")
             trans_result = self.wx_trans_model.transcribe(audio, batch_size=16, language="ar")
 
         # Save transcription result
@@ -113,6 +115,8 @@ class TranscriptionService:
 
         # Perform word alignment
         with LoggerTimingContext("Aligning to word-level timestamps", succ_log=True):
+            # Comment/uncomment accordingly if you're testing
+            # align_result = load_json(output_dir / "02_alignment.json")
             align_result = self.wx_align(
                 trans_result["segments"], self.wx_align_model, self.align_metadata, audio, self.device
             )

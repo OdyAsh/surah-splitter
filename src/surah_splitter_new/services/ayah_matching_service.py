@@ -54,7 +54,6 @@ class AyahMatchingService:
         # Save intermediates if requested
         if save_intermediates and output_dir:
             # Save recognized words
-            output_dir.mkdir(parents=True, exist_ok=True)
             save_intermediate_json(
                 data=[{"word": w[0], "start": w[1], "end": w[2], "score": w[3]} for w in recognized_words],
                 output_dir=output_dir,
@@ -77,8 +76,6 @@ class AyahMatchingService:
 
         # Align words (dynamic programming)
         cost_matrix, back_matrix = self._compute_alignment_matrices(recognized_words, reference_words)
-        # Store back_matrix as an instance variable so it can be accessed in _convert_to_word_spans
-        self.back_matrix = back_matrix
 
         if save_intermediates and output_dir:
             # Also save as JSON for human readability
@@ -117,14 +114,14 @@ class AyahMatchingService:
         ayah_timestamps = self._extract_ayah_timestamps(word_spans, reference_words, reference_ayahs)
 
         # Save ayah timestamps
-        if save_intermediates and output_dir:
+        if output_dir:
             save_intermediate_json(
                 data=[
                     {"ayah_number": ts.ayah_number, "start_time": ts.start_time, "end_time": ts.end_time, "text": ts.text}
                     for ts in ayah_timestamps
                 ],
                 output_dir=output_dir,
-                filename="09_ayah_timestamps.json",
+                filename="09_ayah_timestamps.json" if save_intermediates else "ayah_timestamps.json",
             )
 
         logger.success(f"Successfully matched {len(ayah_timestamps)} ayahs for surah {surah_number}")
@@ -149,16 +146,17 @@ class AyahMatchingService:
             ],
         }
 
-    def _extract_recognized_words(self, transcription_result: Dict[str, Any]) -> List[Tuple[str, float, float, float]]:
-        """Extract recognized words from transcription result.
+    def _extract_recognized_words(self, alignment_result: Dict[str, Any]) -> List[Tuple[str, float, float, float]]:
+        """Extract recognized words from alignment result.
 
         Args:
-            transcription_result: Result from TranscriptionService.transcribe()
+            alignment_result: Result from TranscriptionService.transcribe()
+                (internally: whisperx.align())
 
         Returns:
             List of tuples (word, start_time, end_time, score)
         """
-        word_segments = transcription_result.get("word_segments", [])
+        word_segments = alignment_result.get("word_segments", [])
 
         # Clean and prepare words
         recognized_words = []
@@ -182,7 +180,7 @@ class AyahMatchingService:
         return recognized_words
 
     def _clean_word(self, word: str) -> str:
-        """Clean a word by removing diacritics and special characters.
+        """Clean Arabic text by removing diacritics and non-Arabic characters.
 
         Args:
             word: Input word
@@ -190,15 +188,13 @@ class AyahMatchingService:
         Returns:
             Cleaned word
         """
-        # Remove diacritics (tashkeel) - Arabic-specific
-        word = re.sub(r"[\u064B-\u065F\u0670]", "", word)
+        # Keep only specified Arabic letters and spaces
+        # Check this for details:
+        #   https://jrgraphix.net/r/Unicode/0600-06FF
+        word = re.sub(r"[^\u060f\u0620-\u064a\u066e\u066f\u0671-\u06d3\u06d5\s]", "", word)
 
-        # Remove special characters
-        word = re.sub(r"[^\w\s]", "", word)
-
-        # Trim whitespace
-        word = word.strip()
-
+        # Normalize/Trim spaces
+        word = re.sub(r"\s+", " ", word).strip()
         return word
 
     def _extract_reference_words(self, reference_ayahs: List[str]) -> List[ReferenceWord]:
@@ -368,22 +364,18 @@ class AyahMatchingService:
             if i == 0 or j == 0:
                 continue
 
-            # Get the reference word and its index (j-1 because j is 1-indexed in alignment)
+            # Get the reference word and its index (j-1 because j is 1-indexed in alignment_ij_indices)
             ref_index = j - 1
             ref_word = reference_words[ref_index].word
 
-            # Get the recognized word and timing info (i-1 because i is 1-indexed in alignment)
+            # Get the recognized word and timing info (i-1 because i is 1-indexed in alignment_ij_indices)
             rec_index = i - 1
             rec_word = recognized_words[rec_index][0]
             start_time = recognized_words[rec_index][1]
             end_time = recognized_words[rec_index][2]
-            # Get the operation type from the back_matrix if available
-            operation = 0
-            if hasattr(self, "back_matrix") and i < self.back_matrix.shape[0] and j < self.back_matrix.shape[1]:
-                operation = self.back_matrix[i, j]
 
             # Determine if this is an exact or inexact match
-            is_exact = rec_word == ref_word or operation == 3  # 3 is the operation code for exact match
+            is_exact = rec_word == ref_word
 
             # Set appropriate flags
             flags = SegmentedWordSpan.MATCHED_INPUT | SegmentedWordSpan.MATCHED_REFERENCE
