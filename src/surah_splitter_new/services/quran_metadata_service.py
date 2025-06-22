@@ -3,8 +3,7 @@ Service for accessing Quranic metadata.
 """
 
 import json
-from pathlib import Path
-from typing import Dict, List
+from typing import List, Optional
 
 from surah_splitter_new.utils.paths import QURAN_METADATA_PATH
 from surah_splitter_new.utils.file_utils import load_json
@@ -13,14 +12,12 @@ from surah_splitter_new.utils.file_utils import load_json
 class QuranMetadataService:
     """Service for accessing Quranic metadata."""
 
-    def __init__(self):
-        self.metadata_cache = {}
-
-    def get_ayahs(self, surah_number: int) -> List[str]:
+    def get_ayahs(self, surah_number: int, ayah_numbers: Optional[list[int]] = None) -> List[str]:
         """Get cleaned ayahs for a given surah.
 
         Args:
             surah_number: Surah number (1-114)
+            ayah_numbers: Optional list of specific ayahs to match
 
         Returns:
             List of cleaned ayah texts
@@ -29,10 +26,6 @@ class QuranMetadataService:
             FileNotFoundError: If metadata file not found
             ValueError: If surah not found in metadata
         """
-        # Cache check
-        cache_key = f"ayahs_{surah_number}"
-        if cache_key in self.metadata_cache:
-            return self.metadata_cache[cache_key]
 
         # Load from file
         surah_to_simple_ayahs_path = QURAN_METADATA_PATH / "surah_to_simple_ayahs.json"
@@ -49,10 +42,10 @@ class QuranMetadataService:
             raise ValueError(f"Surah {surah_number} not found in the ayah data. " f"Check {surah_to_simple_ayahs_path}")
 
         ayahs_dict = surah_to_simple_ayahs_dict[surah_number_str]
-        ayahs = [ayahs_dict[v_id] for v_id in sorted(ayahs_dict.keys(), key=int)]
+        ayahs = [
+            ayahs_dict[v_id] for v_id in sorted(ayahs_dict.keys(), key=int) if not ayah_numbers or int(v_id) in ayah_numbers
+        ]
 
-        # Cache result
-        self.metadata_cache[cache_key] = ayahs
         return ayahs
 
     def get_surah_name(self, surah_number: int) -> str:
@@ -68,10 +61,6 @@ class QuranMetadataService:
             FileNotFoundError: If metadata file not found
             ValueError: If surah not found in metadata
         """
-        # Cache check
-        cache_key = f"surah_name_{surah_number}"
-        if cache_key in self.metadata_cache:
-            return self.metadata_cache[cache_key]
 
         # Load from file
         surah_metadata_path = QURAN_METADATA_PATH / "quran-metadata-surah-name.json"
@@ -87,6 +76,4 @@ class QuranMetadataService:
 
         surah_name = surah_metadata[surah_number_str]
 
-        # Cache result
-        self.metadata_cache[cache_key] = surah_name
         return surah_name

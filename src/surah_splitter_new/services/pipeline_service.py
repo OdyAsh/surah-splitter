@@ -27,6 +27,7 @@ class PipelineService:
         surah_number: int,
         reciter_name: str,
         output_dir: Path,
+        ayah_numbers: Optional[list[int]] = None,
         model_name: str = "OdyAsh/faster-whisper-base-ar-quran",
         device: Optional[str] = None,
         save_intermediates: bool = False,
@@ -68,7 +69,7 @@ class PipelineService:
         # Step 3: Match ayahs to transcription
         logger.info("Matching ayahs to transcription")
         ayah_matching_result = self.ayah_matching_service.match_ayahs(
-            transcription_result, surah_number, timestamps_dir, save_intermediates
+            transcription_result, surah_number, ayah_numbers, timestamps_dir, save_intermediates
         )
         logger.success("Ayah matching completed")
 

@@ -7,6 +7,8 @@ Usage example (terminal):
 ```bash
     # Full pipeline processing
     python main_cli.py -au "./data/input_surahs_to_split/adel_ryyan/076 Al-Insaan.mp3" -su 76 -re "adel_rayyan" -si -ssu
+    or:
+    python ./src/surah_splitter_new/app/main_cli.py -au "./data/input_surahs_to_split/omar_bin_diaa_al_din/002_al-baqarah_partial.mp3" -su 2 -re "omar_bin_diaa_al_din" -si -ssu -ay 155,156,157
 
     # Just transcribe
     python main_cli.py transcribe_audio -au "./data/input_surahs_to_split/adel_ryyan/076 Al-Insaan.mp3" -o "./data/outputs/transcription.json"
@@ -47,6 +49,7 @@ def process_surah(
     surah: Annotated[int, Parameter(name=["--surah", "-su"], validator=validators.Number(gte=1, lte=114))],
     reciter: Annotated[str, Parameter(name=["--reciter", "-re"])],
     ######### Optional args #########
+    ayahs: Annotated[Optional[str], Parameter(name=["--ayahs", "-ay"])] = None,
     model_name: Annotated[str, Parameter(name=["--model-name", "-mn"])] = "OdyAsh/faster-whisper-base-ar-quran",
     model_size: Annotated[Literal["tiny", "small", "medium", "large"], Parameter(name=["--model-size", "-ms"])] = "small",
     device: Annotated[Optional[Literal["cuda", "cpu"]], Parameter(name=["--device", "-d"])] = None,
@@ -59,6 +62,14 @@ def process_surah(
     This command runs the complete pipeline of transcription, matching, and segmentation.
     """
     try:
+        # Validate ayah number(s) if provided
+        ayahs = [int(x.strip()) for x in ayahs.split(",")] if ayahs else None
+        if ayahs:
+            for ayah in ayahs:
+                # TODO later: create a surah_num->max_ayah_num mapping (json file) to validate ayah numbers
+                if ayah < 1:
+                    raise ValueError(f"Invalid ayah number: {ayah}. Must be a positive integer.")
+
         # Create pipeline service
         pipeline_service = PipelineService()
 
@@ -69,6 +80,7 @@ def process_surah(
             surah_number=surah,
             reciter_name=reciter,
             output_dir=output_dir,
+            ayah_numbers=ayahs,
             model_name=model_name,
             device=device,
             save_intermediates=save_intermediates,
@@ -125,6 +137,7 @@ def transcribe_audio(
 def match_ayahs(
     transcription_file: Annotated[Path, Parameter(name=["transcription_file", "-tf"])],
     surah: Annotated[int, Parameter(name=["--surah", "-su"], validator=validators.Number(gte=1, lte=114))],
+    ayahs: Annotated[Optional[str], Parameter(name=["--ayahs", "-ay"])] = None,
     output_file: Annotated[Optional[Path], Parameter(name=["--output-file", "-o"])] = None,
 ):
     """Match transcribed words to reference ayahs.
@@ -132,6 +145,14 @@ def match_ayahs(
     This command takes a transcription result file and matches it to reference ayahs.
     """
     try:
+        # Validate ayah number(s) if provided
+        ayahs = [int(x.strip()) for x in ayahs.split(",")] if ayahs else None
+        if ayahs:
+            for ayah in ayahs:
+                # TODO later: create a surah_num->max_ayah_num mapping (json file) to validate ayah numbers
+                if ayah < 1:
+                    raise ValueError(f"Invalid ayah number: {ayah}. Must be a positive integer.")
+
         # Load transcription file
         with open(transcription_file, "r", encoding="utf-8") as f:
             transcription_result = json.load(f)
@@ -141,7 +162,11 @@ def match_ayahs(
 
         # Match ayahs
         result = matching_service.match_ayahs(
-            transcription_result, surah, output_file.parent if output_file else None, save_intermediates=bool(output_file)
+            transcription_result,
+            surah,
+            ayahs,
+            output_file.parent if output_file else None,
+            save_intermediates=bool(output_file),
         )
 
         # Save result if output specified

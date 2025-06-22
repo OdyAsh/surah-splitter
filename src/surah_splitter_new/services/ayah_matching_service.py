@@ -23,6 +23,7 @@ class AyahMatchingService:
         self,
         transcription_result: Dict[str, Any],
         surah_number: int,
+        ayah_numbers: Optional[list[int]] = None,
         output_dir: Optional[Path] = None,
         save_intermediates: bool = False,
     ) -> Dict[str, Any]:
@@ -31,6 +32,7 @@ class AyahMatchingService:
         Args:
             transcription_result: Result from TranscriptionService.transcribe()
             surah_number: Surah number to match against
+            ayah_numbers: Optional list of specific ayahs to match
             output_dir: Directory to save intermediate files
             save_intermediates: Whether to save intermediate files
 
@@ -40,7 +42,7 @@ class AyahMatchingService:
         logger.info(f"Matching transcribed words to ayahs for surah {surah_number}")
 
         # Get reference ayahs
-        reference_ayahs = self.quran_service.get_ayahs(surah_number)
+        reference_ayahs = self.quran_service.get_ayahs(surah_number, ayah_numbers)
         logger.debug(f"Loaded {len(reference_ayahs)} reference ayahs for surah {surah_number}")
 
         # Extract recognized words from transcription
@@ -48,7 +50,7 @@ class AyahMatchingService:
         logger.debug(f"Extracted {len(recognized_words)} recognized words from transcription")
 
         # Extract reference words
-        reference_words = self._extract_reference_words(reference_ayahs)
+        reference_words = self._extract_reference_words(reference_ayahs, ayah_numbers)
         logger.debug(f"Extracted {len(reference_words)} reference words")
 
         # Save intermediates if requested
@@ -83,14 +85,14 @@ class AyahMatchingService:
             save_intermediate_json(data=back_matrix.tolist(), output_dir=output_dir, filename="06_back_matrix.json", indent=4)
 
         # Trace back to get alignment
-        alignment_ij_indices = self._traceback_alignment(cost_matrix, back_matrix)
+        alignment_with_ops = self._traceback_alignment(back_matrix)
 
         if save_intermediates and output_dir:
             # Save alignment indices
-            save_intermediate_json(data=alignment_ij_indices, output_dir=output_dir, filename="07_alignment_ij_indices.json")
+            save_intermediate_json(data=alignment_with_ops, output_dir=output_dir, filename="07_alignment_with_ops.json")
 
         # Convert alignment indices to word spans
-        word_spans = self._convert_to_word_spans(alignment_ij_indices, recognized_words, reference_words)
+        word_spans = self._convert_to_word_spans(alignment_with_ops, recognized_words, reference_words)
 
         if save_intermediates and output_dir:  # Save word spans
             save_intermediate_json(
@@ -103,6 +105,7 @@ class AyahMatchingService:
                         "start": span.start,
                         "end": span.end,
                         "flags": span.flags,
+                        "flags_info": span.flags_info,
                     }
                     for span in word_spans
                 ],
@@ -197,18 +200,26 @@ class AyahMatchingService:
         word = re.sub(r"\s+", " ", word).strip()
         return word
 
-    def _extract_reference_words(self, reference_ayahs: List[str]) -> List[ReferenceWord]:
+    def _extract_reference_words(
+        self, reference_ayahs: List[str], ayah_numbers: Optional[List[int]] = None
+    ) -> List[ReferenceWord]:
         """Extract words from reference ayahs.
 
         Args:
             reference_ayahs: List of ayah texts
+            ayah_numbers: List of ayah numbers corresponding to the reference ayahs
 
         Returns:
             List of ReferenceWord objects
         """
         reference_words = []
 
-        for ayah_idx, ayah_text in enumerate(reference_ayahs, start=1):
+        for i, ayah_text in enumerate(reference_ayahs):
+            if ayah_numbers:
+                ayah_idx = ayah_numbers[i]
+            else:
+                ayah_idx = i + 1  # Ayah numbers are 1-based
+
             # Split into words and clean
             words = [self._clean_word(w) for w in ayah_text.split()]
 
@@ -222,7 +233,9 @@ class AyahMatchingService:
                         word=word,
                         ayah_number=ayah_idx,
                         word_location_wrt_ayah=word_idx,
-                        word_location_wrt_surah=len(reference_words) + 1,
+                        # TODO later: update this logic so that it works with ayah numbers
+                        #   instead of just returning -1
+                        word_location_wrt_surah=len(reference_words) + 1 if not ayah_numbers else -1,
                     )
                 )
 
@@ -299,26 +312,29 @@ class AyahMatchingService:
 
         return cost_matrix, back_matrix
 
-    def _traceback_alignment(self, cost_matrix: np.ndarray, back_matrix: np.ndarray) -> List[Tuple[int, int]]:
-        """Trace back through the alignment matrices to get the alignment.
+    def _traceback_alignment(self, back_matrix: np.ndarray) -> List[Tuple[int, int, int]]:
+        """Trace back through the alignment matrices to get the alignment operations.
 
         Args:
-            cost_matrix: The cost matrix
-            back_matrix: The back matrix with operation codes
+            back_matrix: The back matrix with operation codes.
 
         Returns:
-            List of (i,j) indices representing the alignment
+            List of (operation, i, j) tuples representing the alignment path.
+            operation: 1=INS, 2=DEL, 3=MATCH, 4=SUBST
         """
-        i = cost_matrix.shape[0] - 1
-        j = cost_matrix.shape[1] - 1
+        i = back_matrix.shape[0] - 1
+        j = back_matrix.shape[1] - 1
 
         alignment = []
 
         # Trace back from bottom-right to top-left
         while i > 0 or j > 0:
-            alignment.append((i, j))
+            # Handle case where back_matrix might be empty or have invalid indices
+            if i < 0 or j < 0:
+                break
 
-            operation = back_matrix[i, j]
+            operation = int(back_matrix[i, j])
+            alignment.append((operation, i, j))
 
             if operation == 1:  # Insertion
                 i -= 1
@@ -335,73 +351,112 @@ class AyahMatchingService:
 
     def _convert_to_word_spans(
         self,
-        alignment_ij_indices: List[Tuple[int, int]],
+        alignment_with_ops: List[Tuple[int, int, int]],
         recognized_words: List[Tuple[str, float, float, float]],
         reference_words: List[ReferenceWord],
+        previous_ayahs_to_match: int = 0,
     ) -> List[SegmentedWordSpan]:
-        """Convert alignment indices to word spans.
+        """Convert alignment operations to word spans, with look-back for repeated words.
 
         Args:
-            alignment_ij_indices: List of (i,j) alignment indices
-            recognized_words: List of recognized words
-            reference_words: List of reference words
+            alignment_with_ops: List of (operation, i, j) tuples from traceback.
+            recognized_words: List of recognized words.
+            reference_words: List of reference words.
+            previous_ayahs_to_match: How many previous ayahs to search for rematches, where:
+            * `-1` means we assume the reciter is not repeating words, so no rematches are needed.
+            * `0` means search for rematches in the current ayah only.
+            * `1` means search for rematches in the current and previous ayah, and so on
 
         Returns:
-            List of SegmentedWordSpan objects
+            List of SegmentedWordSpan objects.
         """
         word_spans = []
+        last_match_ref_idx = -1
 
-        # Skip the (0,0) alignment if it exists
-        start_idx = 0
-        if alignment_ij_indices and alignment_ij_indices[0] == (0, 0):
-            start_idx = 1
+        for operation, i, j in alignment_with_ops:
+            if operation in [3, 4]:  # Match or Substitution
+                ref_index = j - 1
+                rec_index = i - 1
+                last_match_ref_idx = ref_index
 
-        # Process each alignment pair to create individual word spans
-        for idx in range(start_idx, len(alignment_ij_indices)):
-            i, j = alignment_ij_indices[idx]
+                ref_word_obj = reference_words[ref_index]
+                rec_word_tuple = recognized_words[rec_index]
 
-            # Skip cases where either index is 0 (these are alignment placeholders)
-            if i == 0 or j == 0:
-                continue
+                is_exact = operation == 3
 
-            # Get the reference word and its index (j-1 because j is 1-indexed in alignment_ij_indices)
-            ref_index = j - 1
-            ref_word = reference_words[ref_index].word
+                flags = SegmentedWordSpan.MATCHED_INPUT | SegmentedWordSpan.MATCHED_REFERENCE
+                flags |= SegmentedWordSpan.EXACT if is_exact else SegmentedWordSpan.INEXACT
 
-            # Get the recognized word and timing info (i-1 because i is 1-indexed in alignment_ij_indices)
-            rec_index = i - 1
-            rec_word = recognized_words[rec_index][0]
-            start_time = recognized_words[rec_index][1]
-            end_time = recognized_words[rec_index][2]
-
-            # Determine if this is an exact or inexact match
-            is_exact = rec_word == ref_word
-
-            # Set appropriate flags
-            flags = SegmentedWordSpan.MATCHED_INPUT | SegmentedWordSpan.MATCHED_REFERENCE
-            if is_exact:
-                flags |= SegmentedWordSpan.EXACT
-            else:
-                flags |= SegmentedWordSpan.INEXACT
-
-            # Create the word span with the flags_info for better debugging
-            word_spans.append(
-                SegmentedWordSpan(
-                    reference_index_start=ref_index,
-                    reference_index_end=ref_index + 1,  # End is exclusive
-                    reference_words_segment=ref_word,
-                    input_words_segment=rec_word,
-                    start=start_time,
-                    end=end_time,
-                    flags=flags,
-                    flags_info={
-                        "matched_input": bool(flags & SegmentedWordSpan.MATCHED_INPUT),
-                        "matched_reference": bool(flags & SegmentedWordSpan.MATCHED_REFERENCE),
-                        "exact": bool(flags & SegmentedWordSpan.EXACT),
-                        "inexact": bool(flags & SegmentedWordSpan.INEXACT),
-                    },
+                word_spans.append(
+                    SegmentedWordSpan(
+                        reference_index_start=ref_index,
+                        reference_index_end=ref_index + 1,
+                        reference_words_segment=ref_word_obj.word,
+                        input_words_segment=rec_word_tuple[0],
+                        start=rec_word_tuple[1],
+                        end=rec_word_tuple[2],
+                        flags=flags,
+                        flags_info={
+                            "matched_input": True,
+                            "matched_reference": True,
+                            "exact": is_exact,
+                            "inexact": not is_exact,
+                        },
+                    )
                 )
-            )
+            elif operation == 1:  # Insertion
+                # This is a recognized word that wasn't matched.
+                # Try to find a "look-back" match for it.
+                if last_match_ref_idx == -1:
+                    continue  # No context to look back from
+
+                rec_index = i - 1
+                rec_word_tuple = recognized_words[rec_index]
+                rec_word_to_rematch = rec_word_tuple[0]
+
+                # Determine the search window
+                context_ayah = reference_words[last_match_ref_idx].ayah_number
+                ayah_limit = context_ayah - previous_ayahs_to_match
+
+                # Search backwards from the last match position
+                best_rematch_k = -1
+                for k in range(last_match_ref_idx, -1, -1):
+                    ref_word_obj = reference_words[k]
+                    if ref_word_obj.ayah_number < ayah_limit:
+                        break  # Outside the look-back window
+                    if ref_word_obj.word == rec_word_to_rematch:
+                        best_rematch_k = k
+                        break
+
+                if best_rematch_k != -1:
+                    # Found a rematch
+                    ref_index = best_rematch_k
+                    ref_word_obj = reference_words[ref_index]
+
+                    flags = SegmentedWordSpan.MATCHED_INPUT | SegmentedWordSpan.MATCHED_REFERENCE | SegmentedWordSpan.EXACT
+
+                    # Add flags_info for better debugging
+                    flags_info = {
+                        "matched_input": True,
+                        "matched_reference": True,
+                        "exact": True,
+                        "inexact": False,
+                        "rematched": True,
+                    }
+
+                    word_spans.append(
+                        SegmentedWordSpan(
+                            reference_index_start=ref_index,
+                            reference_index_end=ref_index + 1,
+                            reference_words_segment=ref_word_obj.word,
+                            input_words_segment=rec_word_tuple[0],
+                            start=rec_word_tuple[1],
+                            end=rec_word_tuple[2],
+                            flags=flags,
+                            flags_info=flags_info,
+                        )
+                    )
+            # Deletions (operation == 2) are ignored, as they don't have timing info.
 
         return word_spans
 
@@ -428,7 +483,8 @@ class AyahMatchingService:
             ayah_to_ref_word_indices[ref_word.ayah_number].append(i)
 
         # For each ayah, find the span that contains its words
-        for ayah_number in sorted(ayah_to_ref_word_indices.keys()):
+        sorted_ayah_nums = sorted(ayah_to_ref_word_indices.keys())
+        for idx, ayah_number in enumerate(sorted_ayah_nums):
             ref_word_indices = ayah_to_ref_word_indices[ayah_number]
             ayah_start_idx = min(ref_word_indices)
             ayah_end_idx = max(ref_word_indices) + 1  # +1 because end is exclusive
@@ -446,7 +502,7 @@ class AyahMatchingService:
                 end_time = max(span.end for span in ayah_spans)
 
                 # Get the ayah text
-                ayah_text = reference_ayahs[ayah_number - 1]
+                ayah_text = reference_ayahs[idx]
 
                 ayah_timestamps.append(
                     AyahTimestamp(ayah_number=ayah_number, start_time=start_time, end_time=end_time, text=ayah_text)
