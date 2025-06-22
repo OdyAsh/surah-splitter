@@ -2,7 +2,6 @@
 Service for matching transcribed words to reference ayahs.
 """
 
-import json
 import re
 import numpy as np
 from pathlib import Path
@@ -10,7 +9,8 @@ from typing import Dict, Any, List, Optional, Tuple
 
 from surah_splitter_new.utils.app_logger import logger
 from surah_splitter_new.services.quran_metadata_service import QuranMetadataService
-from surah_splitter_new.models.alignment import ReferenceWord, SegmentedWordSpan, SegmentationStats, AyahTimestamp
+from surah_splitter_new.models.alignment import ReferenceWord, SegmentedWordSpan, AyahTimestamp
+from surah_splitter_new.utils.file_utils import save_intermediate_json
 
 
 class AyahMatchingService:
@@ -53,95 +53,79 @@ class AyahMatchingService:
 
         # Save intermediates if requested
         if save_intermediates and output_dir:
-            output_dir.mkdir(parents=True, exist_ok=True)
-
             # Save recognized words
-            with open(output_dir / "03_recognized_words.json", "w", encoding="utf-8") as f:
-                json.dump(
-                    [{"word": w[0], "start": w[1], "end": w[2], "score": w[3]} for w in recognized_words],
-                    f,
-                    ensure_ascii=False,
-                    indent=2,
-                )
-
+            output_dir.mkdir(parents=True, exist_ok=True)
+            save_intermediate_json(
+                data=[{"word": w[0], "start": w[1], "end": w[2], "score": w[3]} for w in recognized_words],
+                output_dir=output_dir,
+                filename="03_recognized_words.json",
+            )
             # Save reference words
-            with open(output_dir / "04_reference_words.json", "w", encoding="utf-8") as f:
-                json.dump(
-                    [
-                        {
-                            "word": w.word,
-                            "ayah_number": w.ayah_number,
-                            "word_location_wrt_ayah": w.word_location_wrt_ayah,
-                            "word_location_wrt_surah": w.word_location_wrt_surah,
-                        }
-                        for w in reference_words
-                    ],
-                    f,
-                    ensure_ascii=False,
-                    indent=2,
-                )
+            save_intermediate_json(
+                data=[
+                    {
+                        "word": w.word,
+                        "ayah_number": w.ayah_number,
+                        "word_location_wrt_ayah": w.word_location_wrt_ayah,
+                        "word_location_wrt_surah": w.word_location_wrt_surah,
+                    }
+                    for w in reference_words
+                ],
+                output_dir=output_dir,
+                filename="04_reference_words.json",
+            )
 
         # Align words (dynamic programming)
         cost_matrix, back_matrix = self._compute_alignment_matrices(recognized_words, reference_words)
+        # Store back_matrix as an instance variable so it can be accessed in _convert_to_word_spans
+        self.back_matrix = back_matrix
 
         if save_intermediates and output_dir:
-            # Save cost and back matrices
-            np.save(output_dir / "05_cost_matrix.npy", cost_matrix)
-            np.save(output_dir / "06_back_matrix.npy", back_matrix)
-
             # Also save as JSON for human readability
-            with open(output_dir / "05_cost_matrix.json", "w", encoding="utf-8") as f:
-                json.dump(cost_matrix.tolist(), f)
-            with open(output_dir / "06_back_matrix.json", "w", encoding="utf-8") as f:
-                json.dump(back_matrix.tolist(), f)
+            save_intermediate_json(data=cost_matrix.tolist(), output_dir=output_dir, filename="05_cost_matrix.json", indent=4)
+            save_intermediate_json(data=back_matrix.tolist(), output_dir=output_dir, filename="06_back_matrix.json", indent=4)
 
         # Trace back to get alignment
         alignment_ij_indices = self._traceback_alignment(cost_matrix, back_matrix)
 
         if save_intermediates and output_dir:
             # Save alignment indices
-            with open(output_dir / "07_alignment_ij_indices.json", "w", encoding="utf-8") as f:
-                json.dump(alignment_ij_indices, f, ensure_ascii=False, indent=2)
+            save_intermediate_json(data=alignment_ij_indices, output_dir=output_dir, filename="07_alignment_ij_indices.json")
 
         # Convert alignment indices to word spans
         word_spans = self._convert_to_word_spans(alignment_ij_indices, recognized_words, reference_words)
 
-        if save_intermediates and output_dir:
-            # Save word spans
-            with open(output_dir / "08_word_spans.json", "w", encoding="utf-8") as f:
-                json.dump(
-                    [
-                        {
-                            "reference_index_start": span.reference_index_start,
-                            "reference_index_end": span.reference_index_end,
-                            "reference_words_segment": span.reference_words_segment,
-                            "input_words_segment": span.input_words_segment,
-                            "start": span.start,
-                            "end": span.end,
-                            "flags": span.flags,
-                        }
-                        for span in word_spans
-                    ],
-                    f,
-                    ensure_ascii=False,
-                    indent=2,
-                )
+        if save_intermediates and output_dir:  # Save word spans
+            save_intermediate_json(
+                data=[
+                    {
+                        "reference_index_start": span.reference_index_start,
+                        "reference_index_end": span.reference_index_end,
+                        "reference_words_segment": span.reference_words_segment,
+                        "input_words_segment": span.input_words_segment,
+                        "start": span.start,
+                        "end": span.end,
+                        "flags": span.flags,
+                    }
+                    for span in word_spans
+                ],
+                output_dir=output_dir,
+                filename="08_word_spans.json",
+            )
 
         # Extract ayah timestamps
         ayah_timestamps = self._extract_ayah_timestamps(word_spans, reference_words, reference_ayahs)
 
+        # Save ayah timestamps
         if save_intermediates and output_dir:
-            # Save ayah timestamps
-            with open(output_dir / "09_ayah_timestamps.json", "w", encoding="utf-8") as f:
-                json.dump(
-                    [
-                        {"ayah_number": ts.ayah_number, "start_time": ts.start_time, "end_time": ts.end_time, "text": ts.text}
-                        for ts in ayah_timestamps
-                    ],
-                    f,
-                    ensure_ascii=False,
-                    indent=2,
-                )
+            save_intermediate_json(
+                data=[
+                    {"ayah_number": ts.ayah_number, "start_time": ts.start_time, "end_time": ts.end_time, "text": ts.text}
+                    for ts in ayah_timestamps
+                ],
+                output_dir=output_dir,
+                filename="09_ayah_timestamps.json",
+            )
 
         logger.success(f"Successfully matched {len(ayah_timestamps)} ayahs for surah {surah_number}")
 
@@ -159,6 +143,7 @@ class AyahMatchingService:
                     "start": span.start,
                     "end": span.end,
                     "flags": span.flags,
+                    "flags_info": span.flags_info,
                 }
                 for span in word_spans
             ],
@@ -370,72 +355,59 @@ class AyahMatchingService:
         """
         word_spans = []
 
-        # Process alignment to create word spans
-        prev_j = 0
-        span_start_j = 0
-        span_start_time = 0
+        # Skip the (0,0) alignment if it exists
+        start_idx = 0
+        if alignment_ij_indices and alignment_ij_indices[0] == (0, 0):
+            start_idx = 1
 
-        for idx, (i, j) in enumerate(alignment_ij_indices):
-            # Skip the (0,0) case
-            if i == 0 and j == 0:
+        # Process each alignment pair to create individual word spans
+        for idx in range(start_idx, len(alignment_ij_indices)):
+            i, j = alignment_ij_indices[idx]
+
+            # Skip cases where either index is 0 (these are alignment placeholders)
+            if i == 0 or j == 0:
                 continue
 
-            # Check if there's a gap in reference indices (j)
-            if j > 0 and prev_j > 0 and j - prev_j > 1:
-                # We have a gap, so create a span for the previous segment
-                if span_start_j < prev_j:
-                    # Create segment from span_start_j to prev_j
-                    start_time = span_start_time
-                    # Find the end time from the last recognized word in this span
-                    end_time = recognized_words[i - 1][2] if i > 0 else 0
+            # Get the reference word and its index (j-1 because j is 1-indexed in alignment)
+            ref_index = j - 1
+            ref_word = reference_words[ref_index].word
 
-                    # Get the reference words segment
-                    ref_segment = " ".join([rw.word for rw in reference_words[span_start_j:prev_j]])
+            # Get the recognized word and timing info (i-1 because i is 1-indexed in alignment)
+            rec_index = i - 1
+            rec_word = recognized_words[rec_index][0]
+            start_time = recognized_words[rec_index][1]
+            end_time = recognized_words[rec_index][2]
+            # Get the operation type from the back_matrix if available
+            operation = 0
+            if hasattr(self, "back_matrix") and i < self.back_matrix.shape[0] and j < self.back_matrix.shape[1]:
+                operation = self.back_matrix[i, j]
 
-                    # Get the recognized words segment
-                    input_segment = " ".join([rw[0] for rw in recognized_words[:i]])
+            # Determine if this is an exact or inexact match
+            is_exact = rec_word == ref_word or operation == 3  # 3 is the operation code for exact match
 
-                    word_spans.append(
-                        SegmentedWordSpan(
-                            reference_index_start=span_start_j,
-                            reference_index_end=prev_j,
-                            reference_words_segment=ref_segment,
-                            input_words_segment=input_segment,
-                            start=start_time,
-                            end=end_time,
-                            flags=SegmentedWordSpan.MATCHED_REFERENCE,
-                        )
-                    )
+            # Set appropriate flags
+            flags = SegmentedWordSpan.MATCHED_INPUT | SegmentedWordSpan.MATCHED_REFERENCE
+            if is_exact:
+                flags |= SegmentedWordSpan.EXACT
+            else:
+                flags |= SegmentedWordSpan.INEXACT
 
-                    # Start a new span
-                    span_start_j = prev_j
-                    span_start_time = end_time
-
-            prev_j = j
-
-        # Add the final span
-        if span_start_j < len(reference_words):
-            # Get the last alignment indices
-            last_i, last_j = alignment_ij_indices[-1]
-
-            # Get the reference words segment
-            ref_segment = " ".join([rw.word for rw in reference_words[span_start_j:]])
-
-            # Get the recognized words segment
-            input_segment = " ".join([rw[0] for rw in recognized_words[:last_i]])
-
-            # Find the end time from the last recognized word
-            end_time = recognized_words[last_i - 1][2] if last_i > 0 else 0
-
+            # Create the word span with the flags_info for better debugging
             word_spans.append(
                 SegmentedWordSpan(
-                    reference_index_start=span_start_j,
-                    reference_index_end=len(reference_words),
-                    reference_words_segment=ref_segment,
-                    input_words_segment=input_segment,
-                    start=span_start_time,
+                    reference_index_start=ref_index,
+                    reference_index_end=ref_index + 1,  # End is exclusive
+                    reference_words_segment=ref_word,
+                    input_words_segment=rec_word,
+                    start=start_time,
                     end=end_time,
-                    flags=SegmentedWordSpan.MATCHED_REFERENCE,
+                    flags=flags,
+                    flags_info={
+                        "matched_input": bool(flags & SegmentedWordSpan.MATCHED_INPUT),
+                        "matched_reference": bool(flags & SegmentedWordSpan.MATCHED_REFERENCE),
+                        "exact": bool(flags & SegmentedWordSpan.EXACT),
+                        "inexact": bool(flags & SegmentedWordSpan.INEXACT),
+                    },
                 )
             )
 

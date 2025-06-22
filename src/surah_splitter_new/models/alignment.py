@@ -31,6 +31,7 @@ class SegmentedWordSpan:
     end: float  # End time in seconds
 
     flags: int = 0  # Flags indicating match quality
+    flags_info: dict = None  # Dictionary with human-readable flag information
 
     # Flag values (matching the C++ impl)
     CLEAR = 0
@@ -38,6 +39,16 @@ class SegmentedWordSpan:
     MATCHED_REFERENCE = 2
     EXACT = 4
     INEXACT = 8
+
+    def __post_init__(self):
+        """Initialize the flags_info dictionary if not provided"""
+        if self.flags_info is None:
+            self.flags_info = {
+                "matched_input": bool(self.flags & self.MATCHED_INPUT),
+                "matched_reference": bool(self.flags & self.MATCHED_REFERENCE),
+                "exact": bool(self.flags & self.EXACT),
+                "inexact": bool(self.flags & self.INEXACT),
+            }
 
 
 @dataclass

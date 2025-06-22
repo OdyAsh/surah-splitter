@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Dict, List
 
 from surah_splitter_new.utils.paths import QURAN_METADATA_PATH
+from surah_splitter_new.utils.file_utils import load_json
 
 
 class QuranMetadataService:
@@ -41,8 +42,7 @@ class QuranMetadataService:
                 "Please run simple_ayahs_extractor.py script first."
             )
 
-        with open(surah_to_simple_ayahs_path, "r", encoding="utf-8") as f:
-            surah_to_simple_ayahs_dict = json.load(f)
+        surah_to_simple_ayahs_dict = load_json(surah_to_simple_ayahs_path)
 
         surah_number_str = str(surah_number)
         if surah_number_str not in surah_to_simple_ayahs_dict:

@@ -67,7 +67,7 @@ class SegmentationService:
         output_paths = {}
         for timestamp in ayah_timestamps:
             ayah_number = timestamp["ayah_number"]
-            start_ms = timestamp["start_time"] * 1000  # Convert to milliseconds
+            start_ms = timestamp["start_time"] * 1000  # Convert to milliseconds to accurately save segment
             end_ms = timestamp["end_time"] * 1000
 
             logger.debug(f"Processing ayah {ayah_number}, time range: {start_ms/1000:.2f}s - {end_ms/1000:.2f}s")
@@ -79,8 +79,9 @@ class SegmentationService:
             output_path = ayah_audio_dir / f"{surah_number:03d}_{ayah_number:03d}.mp3"
             segment.export(output_path, format="mp3")
 
-            logger.debug(f"Saved ayah {ayah_number} to {output_path}")
             output_paths[ayah_number] = output_path
 
-        logger.success(f"Successfully split surah {surah_number} into {len(output_paths)} ayahs")
+        logger.success(
+            f"Successfully split surah {surah_number} into {len(output_paths)} ayahs and exported to {ayah_audio_dir}"
+        )
         return output_paths

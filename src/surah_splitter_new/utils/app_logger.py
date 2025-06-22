@@ -7,6 +7,7 @@ It uses Loguru for rich, structured logging with minimal setup but powerful feat
 
 from pathlib import Path
 import sys
+import inspect
 from typing import Optional, Union
 from loguru import logger
 
@@ -31,17 +32,38 @@ def setup_logger(
     Returns:
         None
     """
+
+    # Define filter to use bound values if available
+    def file_line_function_filter(record):
+        """Filter to set file, line and function attributes from extras if available."""
+        # If extras contain our custom values, use them instead of the default ones
+        if "file" in record["extra"]:
+            record["file"] = record["extra"]["file"]
+        if "line" in record["extra"]:
+            record["line"] = record["extra"]["line"]
+        if "function" in record["extra"]:
+            record["function"] = record["extra"]["function"]
+        return record
+
     # First, remove any existing handlers
     logger.remove()
 
     # Default format string for structured yet readable logs
     if format_string is None:
-        format_string = (
-            "<green>{time:YYYY-MM-DD HH:mm:ss}</green> | "
-            "<level>{level}</level> | "
-            "<blue>{file.name}</blue>:<cyan>{line}</cyan> <magenta>[{function}()]</magenta> | "
-            "<level>{message}</level>"
-        )
+        # Define format components as string variables
+        time_format = "<green>{time:YYYY-MM-DD HH:mm:ss}</green>"
+        level_format = "<level>{level}</level>"
+
+        # NOTE: Even though `{file}` is a dict that contains `name` and `path` keys, if we use it directly,
+        #   it will just show the `name` of the file, which is what we want.
+        file_format = "<blue>{file}</blue>"
+
+        line_format = "<cyan>{line}</cyan>"
+        function_format = "<magenta>[{function}()]</magenta>"
+        message_format = "<level>{message}</level>"
+
+        # Combine using f-string
+        format_string = f"{time_format} | {level_format} | {file_format}:{line_format} {function_format} | {message_format}"
 
     # Add stderr handler
     logger.add(
@@ -49,6 +71,7 @@ def setup_logger(
         level=log_level,
         format=format_string,
         colorize=True,
+        filter=file_line_function_filter,
     )
 
     # Add file handler if log_file is provided
@@ -68,6 +91,7 @@ def setup_logger(
             retention=retention,
             compression="zip",
             encoding="utf-8",
+            filter=file_line_function_filter,
         )
 
 
@@ -75,28 +99,38 @@ def setup_logger(
 class LoggerTimingContext:
     """Context manager for timing operations and logging the duration."""
 
-    def __init__(
-        self, operation_name: str, level: str = "DEBUG", succ_when_complete: bool = False, show_started_log: bool = False
-    ):
+    def __init__(self, operation_name: str, level: str = "DEBUG", succ_log: bool = False, start_log: bool = True):
         """
         Initialize a new timing context.
 
         Args:
             operation_name: Name of the operation being timed
-            level: Log level to use when logging the timing (default: INFO)
+            level: Log level to use when logging the timing (default: DEBUG)
+            succ_log: Whether to use SUCCESS level when operation completes
+            start_log: Whether to show a log when the operation starts
         """
         self.operation_name = operation_name
         self.level = level
-        self.succ_when_complete = succ_when_complete
-        self.show_started_log = show_started_log
+        self.succ_log = succ_log
+        self.start_log = start_log
+
+        # Capture caller information
+        current_frame = inspect.currentframe()
+        caller_frame = inspect.getouterframes(current_frame, 2)
+        self.caller_file = Path(caller_frame[1].filename).name
+        self.caller_line = caller_frame[1].lineno
+        self.caller_function = caller_frame[1].function
+
+        # Create a bound logger with caller information
+        self.bound_logger = logger.bind(file=self.caller_file, line=self.caller_line, function=self.caller_function)
 
     def __enter__(self):
         """Start the timer when entering the context."""
         import time
 
         self.start_time = time.time()
-        if self.show_started_log:
-            logger.log(self.level, f'Started: "{self.operation_name}"')
+        if self.start_log:
+            self.bound_logger.log(self.level, f'Started: "{self.operation_name}"')
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
@@ -114,11 +148,12 @@ class LoggerTimingContext:
             time_str = f"{elapsed / 3600:.2f}h"
 
         if exc_type:
-            logger.error(f'Operation "{self.operation_name}" failed after {time_str}: {exc_val}')
+            self.bound_logger.error(f'Operation "{self.operation_name}" failed after {time_str}: {exc_val}')
         else:
-            self.level = "SUCCESS" if self.succ_when_complete else self.level
-            # TODO soon: <magenta>in {time_str}</magenta>
-            logger.log(self.level, f'Completed: "{self.operation_name}" in {time_str}')
+            log_level = "SUCCESS" if self.succ_log else self.level
+            self.bound_logger.opt(colors=True).log(
+                log_level, f'<magenta>[⏳ {time_str}]</magenta> Finished: "{self.operation_name}"'
+            )
 
 
 # Initialize the logger with default settings at import time

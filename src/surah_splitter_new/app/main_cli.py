@@ -33,6 +33,7 @@ from surah_splitter_new.services.ayah_matching_service import AyahMatchingServic
 from surah_splitter_new.services.segmentation_service import SegmentationService
 from surah_splitter_new.services.pipeline_service import PipelineService
 from surah_splitter_new.utils.paths import OUTPUTS_PATH
+from surah_splitter_new.utils.file_utils import save_intermediate_json
 
 # Create cyclopts app and rich console
 app = App(help="Process and split Quran audio files into individual ayahs.")
@@ -104,10 +105,12 @@ def transcribe_audio(
 
         # Save result if output specified
         if output_file:
-            output_file.parent.mkdir(parents=True, exist_ok=True)
-            with open(output_file, "w", encoding="utf-8") as f:
-                json.dump(result, f, ensure_ascii=False, indent=2)
-            logger.info(f"Transcription saved to {output_file}")
+            save_intermediate_json(
+                data=result,
+                output_dir=output_file.parent,
+                filename=output_file.name,
+                log_message=f"Transcription result saved to {output_file.name}",
+            )
         else:
             # Print to console
             console.print_json(json.dumps(result, ensure_ascii=False))
@@ -143,10 +146,12 @@ def match_ayahs(
 
         # Save result if output specified
         if output_file:
-            output_file.parent.mkdir(parents=True, exist_ok=True)
-            with open(output_file, "w", encoding="utf-8") as f:
-                json.dump(result, f, ensure_ascii=False, indent=2)
-            logger.info(f"Matching results saved to {output_file}")
+            save_intermediate_json(
+                data=result,
+                output_dir=output_file.parent,
+                filename=output_file.name,
+                log_message=f"Matching results saved to {output_file.name}",
+            )
         else:
             # Print to console
             console.print_json(json.dumps(result, ensure_ascii=False))
