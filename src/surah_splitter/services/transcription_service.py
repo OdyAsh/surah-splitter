@@ -3,8 +3,10 @@ Service for transcribing audio using WhisperX.
 """
 
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Optional
 import gc
+
+from surah_splitter.models.transcription import RecognizedSentencesAndWords
 from huggingface_hub import snapshot_download
 
 # Quick fix to make `import load_model` load faster
@@ -13,7 +15,6 @@ from huggingface_hub.utils import _runtime
 
 _runtime._is_google_colab = False
 
-from surah_splitter.models.transcription import Transcription, RecognizedWordSegment
 from surah_splitter.utils.app_logger import logger, LoggerTimingContext
 from surah_splitter.utils.file_utils import save_intermediate_json
 
@@ -35,7 +36,8 @@ class TranscriptionService:
         device: Optional[str] = None,
         compute_type: Optional[str] = None,
     ):
-        """Initialize WhisperX models.
+        """
+        Initialize the transcription and alignment models.
 
         Args:
             model_name: Name of the model to use
@@ -114,15 +116,16 @@ class TranscriptionService:
             logger.error(f"Failed to initialize models: {str(e)}")
             raise
 
-    def transcribe(self, audio_path: Path, output_dir: Optional[Path] = None) -> Dict[str, Any]:
-        """Transcribe audio file and return word-level timestamps.
+    def transcribe_and_align(self, audio_path: Path, output_dir: Optional[Path] = None) -> RecognizedSentencesAndWords:
+        """
+        Transcribe an audio file and align words to generate word-level timestamps.
 
         Args:
-            audio_path: Path to audio file
-            output_dir: Optional directory to save intermediate files
+            audio_path: Path to the input audio file.
+            output_dir: Optional directory to save intermediate files.
 
         Returns:
-            Dict containing transcription results with word-level timestamps
+            A dictionary containing transcription results and word-level timestamps.
         """
         logger.info(f"Transcribing audio file: {audio_path}")
 
@@ -176,7 +179,12 @@ class TranscriptionService:
         return result
 
     def __del__(self):
-        """Clean up resources when the service is destroyed."""
+        """
+        Clean up resources when the service is destroyed.
+
+        Notes:
+            This method ensures GPU memory is released if the service was using CUDA.
+        """
         # Clean up GPU memory if needed
         if self.device == "cuda":
             logger.debug("Cleaning up GPU memory on service destruction")

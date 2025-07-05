@@ -34,20 +34,27 @@ class PipelineService:
         save_intermediates: bool = False,
         save_incoming_surah_audio: bool = False,
     ) -> Dict[str, Any]:
-        """Process a surah audio file through the complete pipeline.
+        """
+        Process a surah audio file through the complete pipeline.
+
+        This method orchestrates the transcription, ayah matching, and segmentation
+        steps to process the input audio file and generate individual ayah audio files.
 
         Args:
-            audio_path: Path to surah audio file
-            surah_number: Surah number (1-114)
-            reciter_name: Name of the reciter
-            output_dir: Base output directory
-            model_name: WhisperX model name
-            device: Device to use (cuda/cpu)
-            save_intermediates: Whether to save intermediate files
-            save_incoming_surah_audio: Whether to save original surah audio
+            audio_path: Path to the surah audio file.
+            surah_number: Surah number (1-114).
+            reciter_name: Name of the reciter.
+            output_dir: Base directory to save the output files.
+            ayah_numbers: Optional list of specific ayahs to process.
+            model_name: Name of the transcription model to use.
+            device: Device to use for processing (cuda or cpu).
+            compute_type: Type of computation (e.g., float16, int8).
+            save_intermediates: Whether to save intermediate files.
+            save_incoming_surah_audio: Whether to save the original surah audio.
 
         Returns:
-            Dict with processing results and paths
+            A dictionary containing the results of transcription, ayah matching,
+            and segmentation.
         """
         logger.info(f"Starting processing pipeline for surah {surah_number} by {reciter_name}")
 
@@ -64,7 +71,7 @@ class PipelineService:
 
         # Step 2: Transcribe audio
         logger.info(f"Transcribing audio: {audio_path}")
-        transcription_result = self.transcription_service.transcribe(audio_path, timestamps_dir)
+        transcription_result = self.transcription_service.transcribe_and_align(audio_path, timestamps_dir)
         logger.success("Transcription completed")
 
         # Step 3: Match ayahs to transcription

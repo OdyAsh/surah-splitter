@@ -18,4 +18,4 @@ __version__ = "0.2.0"
 # from surah_splitter_new.services.transcription_service import TranscriptionService
 # from surah_splitter_new.services.segmentation_service import SegmentationService
 # from surah_splitter_new.services.pipeline_service import PipelineService
-# from surah_splitter_new.models.alignment import AyahTimestamp
+# from surah_splitter_new.models.transcription import AyahTimestamp

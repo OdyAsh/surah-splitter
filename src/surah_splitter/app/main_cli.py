@@ -8,7 +8,7 @@ Usage example (terminal):
     # Full pipeline processing
     python main_cli.py -au "./data/input_surahs_to_split/adel_ryyan/076 Al-Insaan.mp3" -su 76 -re "adel_rayyan" -si -ssu
     or:
-    python ./src/surah_splitter_new/app/main_cli.py -au "./data/input_surahs_to_split/omar_bin_diaa_al_din/002_al-baqarah_partial.mp3" -su 2 -re "omar_bin_diaa_al_din" -si -ssu -ay 155,156,157
+    python ./src/surah_splitter/app/main_cli.py -au "./data/input_surahs_to_split/omar_bin_diaa_al_din/002_al-baqarah_partial.mp3" -su 2 -re "omar_bin_diaa_al_din" -si -ssu -ay 155,156,157
 
     # Just transcribe
     python main_cli.py transcribe_audio -au "./data/input_surahs_to_split/adel_ryyan/076 Al-Insaan.mp3" -o "./data/outputs/transcription.json"
@@ -58,9 +58,28 @@ def process_surah(
     save_intermediates: Annotated[bool, Parameter(name=["--save-intermediates", "-si"])] = False,
     save_incoming_surah_audio: Annotated[bool, Parameter(name=["--save-incoming-surah-audio", "-ssu"])] = False,
 ):
-    """Process and split a Quran audio file into individual ayahs.
+    """
+    Process and split a Quran audio file into individual ayahs.
 
-    This command runs the complete pipeline of transcription, matching, and segmentation.
+    This command runs the complete pipeline, including transcription, ayah matching,
+    and segmentation. It supports optional arguments for specifying ayahs, model
+    configurations, and intermediate file saving.
+
+    Args:
+        audio_file: Path to the input audio file.
+        surah: Surah number (1-114).
+        reciter: Name of the reciter.
+        ayahs: Optional comma-separated list of ayah numbers to process.
+        model_name: Name of the transcription model to use.
+        model_size: Size of the transcription model (tiny, small, medium, large).
+        device: Device to use for processing (cuda or cpu).
+        compute_type: Type of computation (e.g., float16, int8).
+        output_dir: Directory to save the output files.
+        save_intermediates: Whether to save intermediate files.
+        save_incoming_surah_audio: Whether to save the original surah audio.
+
+    Returns:
+        Exit code (0 for success, 1 for failure).
     """
     try:
         # Validate ayah number(s) if provided
@@ -106,9 +125,22 @@ def transcribe_audio(
     device: Annotated[Optional[Literal["cuda", "cpu"]], Parameter(name=["--device", "-d"])] = None,
     compute_type: Annotated[Optional[str], Parameter(name=["--compute-type", "-ct"])] = None,
 ):
-    """Transcribe an audio file and get word-level timestamps.
+    """
+    Transcribe an audio file and generate word-level timestamps.
 
-    This command only performs the transcription step without matching or segmentation.
+    This command performs only the transcription step without ayah matching
+    or segmentation. The transcription result can be saved to a file or printed
+    to the console.
+
+    Args:
+        audio_file: Path to the input audio file.
+        output_file: Optional path to save the transcription result.
+        model_name: Name of the transcription model to use.
+        device: Device to use for processing (cuda or cpu).
+        compute_type: Type of computation (e.g., float16, int8).
+
+    Returns:
+        Exit code (0 for success, 1 for failure).
     """
     try:
         # Create transcription service
@@ -116,7 +148,7 @@ def transcribe_audio(
         transcription_service.initialize(model_name, device, compute_type)
 
         # Transcribe audio
-        result = transcription_service.transcribe(audio_file, output_file.parent if output_file else None)
+        result = transcription_service.transcribe_and_align(audio_file, output_file.parent if output_file else None)
 
         # Save result if output specified
         if output_file:
@@ -143,9 +175,20 @@ def match_ayahs(
     ayahs: Annotated[Optional[str], Parameter(name=["--ayahs", "-ay"])] = None,
     output_file: Annotated[Optional[Path], Parameter(name=["--output-file", "-o"])] = None,
 ):
-    """Match transcribed words to reference ayahs.
+    """
+    Match transcribed words to reference ayahs.
 
-    This command takes a transcription result file and matches it to reference ayahs.
+    This command takes a transcription result file and matches the words to
+    reference ayahs based on the provided surah number and optional ayah list.
+
+    Args:
+        transcription_file: Path to the transcription result file.
+        surah: Surah number (1-114).
+        ayahs: Optional comma-separated list of ayah numbers to match.
+        output_file: Optional path to save the matching results.
+
+    Returns:
+        Exit code (0 for success, 1 for failure).
     """
     try:
         # Validate ayah number(s) if provided
@@ -199,9 +242,22 @@ def segment_audio(
     output_dir: Annotated[Path, Parameter(name=["--output-dir", "-o"])] = OUTPUTS_PATH,
     save_incoming_surah_audio: Annotated[bool, Parameter(name=["--save-incoming-surah-audio", "-ssu"])] = False,
 ):
-    """Segment audio file based on ayah timestamps.
+    """
+    Segment an audio file into individual ayahs based on timestamps.
 
-    This command takes an audio file and timestamps and creates individual ayah segments.
+    This command uses a timestamps file to split the input audio file into
+    separate audio files for each ayah.
+
+    Args:
+        audio_file: Path to the input audio file.
+        timestamps_file: Path to the timestamps file.
+        surah: Surah number (1-114).
+        reciter: Name of the reciter.
+        output_dir: Directory to save the segmented audio files.
+        save_incoming_surah_audio: Whether to save the original surah audio.
+
+    Returns:
+        Exit code (0 for success, 1 for failure).
     """
     try:
         # Load timestamps file

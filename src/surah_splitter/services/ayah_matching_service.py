@@ -5,11 +5,17 @@ Service for matching transcribed words to reference ayahs.
 import re
 import numpy as np
 from pathlib import Path
-from typing import Dict, Any, List, Optional, Tuple
+from typing import List, Optional, Tuple
 
 from surah_splitter.utils.app_logger import logger
 from surah_splitter.services.quran_metadata_service import QuranMetadataService
-from surah_splitter.models.alignment import ReferenceWord, SegmentedWordSpan, AyahTimestamp
+from surah_splitter.models.transcription import (
+    MatchedAyahsAndSpans,
+    RecognizedSentencesAndWords,
+    ReferenceWord,
+    SegmentedWordSpan,
+    AyahTimestamp,
+)
 from surah_splitter.utils.file_utils import save_intermediate_json
 
 
@@ -21,23 +27,27 @@ class AyahMatchingService:
 
     def match_ayahs(
         self,
-        transcription_result: Dict[str, Any],
+        transcription_result: RecognizedSentencesAndWords,
         surah_number: int,
         ayah_numbers: Optional[list[int]] = None,
         output_dir: Optional[Path] = None,
         save_intermediates: bool = False,
-    ) -> Dict[str, Any]:
-        """Match transcribed words to reference ayahs.
+    ) -> MatchedAyahsAndSpans:
+        """
+        Match transcribed words to reference ayahs.
+
+        This method aligns the recognized words from the transcription result
+        with the reference ayahs for the specified surah.
 
         Args:
-            transcription_result: Result from TranscriptionService.transcribe()
-            surah_number: Surah number to match against
-            ayah_numbers: Optional list of specific ayahs to match
-            output_dir: Directory to save intermediate files
-            save_intermediates: Whether to save intermediate files
+            transcription_result: Transcription result from the TranscriptionService.
+            surah_number: Surah number to match against.
+            ayah_numbers: Optional list of specific ayahs to match.
+            output_dir: Directory to save intermediate files.
+            save_intermediates: Whether to save intermediate files.
 
         Returns:
-            Dict containing ayah timestamps and other alignment info
+            A dictionary containing ayah timestamps and alignment information.
         """
         logger.info(f"Matching transcribed words to ayahs for surah {surah_number}")
 
@@ -63,15 +73,7 @@ class AyahMatchingService:
             )
             # Save reference words
             save_intermediate_json(
-                data=[
-                    {
-                        "word": w.word,
-                        "ayah_number": w.ayah_number,
-                        "word_location_wrt_ayah": w.word_location_wrt_ayah,
-                        "word_location_wrt_surah": w.word_location_wrt_surah,
-                    }
-                    for w in reference_words
-                ],
+                data=ReferenceWord.list_to_dict_list(reference_words),
                 output_dir=output_dir,
                 filename="04_reference_words.json",
             )
@@ -96,19 +98,7 @@ class AyahMatchingService:
 
         if save_intermediates and output_dir:  # Save word spans
             save_intermediate_json(
-                data=[
-                    {
-                        "reference_index_start": span.reference_index_start,
-                        "reference_index_end": span.reference_index_end,
-                        "reference_words_segment": span.reference_words_segment,
-                        "input_words_segment": span.input_words_segment,
-                        "start": span.start,
-                        "end": span.end,
-                        "flags": span.flags,
-                        "flags_info": span.flags_info,
-                    }
-                    for span in word_spans
-                ],
+                data=SegmentedWordSpan.list_to_dict_list(word_spans),
                 output_dir=output_dir,
                 filename="08_word_spans.json",
             )
@@ -119,10 +109,7 @@ class AyahMatchingService:
         # Save ayah timestamps
         if output_dir:
             save_intermediate_json(
-                data=[
-                    {"ayah_number": ts.ayah_number, "start_time": ts.start_time, "end_time": ts.end_time, "text": ts.text}
-                    for ts in ayah_timestamps
-                ],
+                data=AyahTimestamp.list_to_dict_list(ayah_timestamps),
                 output_dir=output_dir,
                 filename="09_ayah_timestamps.json" if save_intermediates else "ayah_timestamps.json",
             )
@@ -130,26 +117,13 @@ class AyahMatchingService:
         logger.success(f"Successfully matched {len(ayah_timestamps)} ayahs for surah {surah_number}")
 
         return {
-            "ayah_timestamps": [
-                {"ayah_number": ts.ayah_number, "start_time": ts.start_time, "end_time": ts.end_time, "text": ts.text}
-                for ts in ayah_timestamps
-            ],
-            "word_spans": [
-                {
-                    "reference_index_start": span.reference_index_start,
-                    "reference_index_end": span.reference_index_end,
-                    "reference_words_segment": span.reference_words_segment,
-                    "input_words_segment": span.input_words_segment,
-                    "start": span.start,
-                    "end": span.end,
-                    "flags": span.flags,
-                    "flags_info": span.flags_info,
-                }
-                for span in word_spans
-            ],
+            "ayah_timestamps": AyahTimestamp.list_to_dict_list(ayah_timestamps),
+            "word_spans": SegmentedWordSpan.list_to_dict_list(word_spans),
         }
 
-    def _extract_recognized_words(self, alignment_result: Dict[str, Any]) -> List[Tuple[str, float, float, float]]:
+    def _extract_recognized_words(
+        self, alignment_result: RecognizedSentencesAndWords
+    ) -> List[Tuple[str, float, float, float]]:
         """Extract recognized words from alignment result.
 
         Args:
