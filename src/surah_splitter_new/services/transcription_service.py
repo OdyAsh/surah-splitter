@@ -15,41 +15,62 @@ _runtime._is_google_colab = False
 
 from surah_splitter_new.models.transcription import Transcription, RecognizedWordSegment
 from surah_splitter_new.utils.app_logger import logger, LoggerTimingContext
-from surah_splitter_new.utils.file_utils import save_intermediate_json, load_json
+from surah_splitter_new.utils.file_utils import save_intermediate_json
 
 
 class TranscriptionService:
     """Service for transcribing audio using WhisperX."""
 
     def __init__(self):
-        self.device = "cpu"
-        self.compute_type = "int8"
+        self.device = None
+        self.compute_type = None
         self.wx_trans_model = None
         self.wx_align_model = None
         self.wx_load_audio = None
-        self.wx_align = None
-        self.torch_cuda = None
+        self._torch_cuda = None
 
-    def initialize(self, model_name: str = "OdyAsh/faster-whisper-base-ar-quran", device: Optional[str] = None):
+    def initialize(
+        self,
+        model_name: str = "OdyAsh/faster-whisper-base-ar-quran",
+        device: Optional[str] = None,
+        compute_type: Optional[str] = None,
+    ):
         """Initialize WhisperX models.
 
         Args:
             model_name: Name of the model to use
             device: Device to use (cuda/cpu)
+            compute_type: Type of computation to use (e.g., "float16", "int8", etc.)
+
+        Notes:
+            If you want to know the supported `compute_type`s, run the following in a REPL:
+            ```python
+            import ctranslate2
+            print(ctranslate2.get_supported_compute_types("cpu")) # or "cuda"
+            # output examples:
+            # for cpu: -> {'int8', 'float32', 'int8_float32'}
+            # for cuda: -> {'float32', 'int8', 'float16', 'int8_float32', 'int8_float16'}
+            ```
+            Source with details: https://opennmt.net/CTranslate2/quantization.html#implicit-type-conversion-on-load
         """
         logger.info(f"Initializing transcription service with model: {model_name}")
 
         from torch import cuda
 
-        self.torch_cuda = cuda
+        self._torch_cuda = cuda
 
         # Set device (cuda if available, otherwise cpu)
         if device is None:
-            self.device = "cuda" if self.torch_cuda.is_available() else "cpu"
+            self.device = "cuda" if self._torch_cuda.is_available() else "cpu"
         else:
             self.device = device
-
         logger.debug(f"Using device: {self.device}")
+
+        if compute_type is None:
+            self.compute_type = "float16" if self._torch_cuda.is_available() else "int8"
+        else:
+            self.compute_type = compute_type
+        logger.debug(f"Using compute type: {self.compute_type}")
 
         # Initialize WhisperX transcription model
         try:
@@ -64,7 +85,13 @@ class TranscriptionService:
                     model_name = model_path  # Use the local path after download
 
             with LoggerTimingContext("Loading WhisperX model"):
-                self.wx_trans_model = load_model(model_name, self.device, compute_type=self.compute_type)
+                self.wx_trans_model = load_model(
+                    model_name,
+                    self.device,
+                    compute_type=self.compute_type,
+                    language="ar",
+                    vad_method="pyannote",  # pyannote/silero,
+                )
 
             # Initialize audio loading function
             from whisperx.audio import load_audio
@@ -73,10 +100,15 @@ class TranscriptionService:
 
             # Initialize alignment model
             with LoggerTimingContext("Importing WhisperX alignment model"):
-                from whisperx.alignment import load_align_model, align
+                from whisperx.alignment import load_align_model
 
-                self.wx_align_model, self.align_metadata = load_align_model(language_code="ar", device=self.device)
-                self.wx_align = align
+                self.wx_align_model, self.align_metadata = load_align_model(
+                    language_code="ar",
+                    device=self.device,
+                    # If `model_name` is not mentioned, it will use the default alignment model for `ar`, which is:
+                    # jonatasgrosman/wav2vec2-large-xlsr-53-arabic/tree/main
+                    model_name="HamzaSidhu786/wav2vec2-base-word-by-word-quran-asr",
+                )
 
         except Exception as e:
             logger.error(f"Failed to initialize models: {str(e)}")
@@ -105,9 +137,12 @@ class TranscriptionService:
 
         # Perform transcription
         with LoggerTimingContext("Transcribing audio", succ_log=True):
-            # Comment/uncomment accordingly if you're testing
-            # trans_result = load_json(output_dir / "01_transcription.json")
-            trans_result = self.wx_trans_model.transcribe(audio, batch_size=16, language="ar")
+            trans_result = self.wx_trans_model.transcribe(
+                audio,
+                batch_size=16,
+                language="ar",
+                verbose=False,  # (output_dir is not None)
+            )
 
         # Save transcription result
         if output_dir:
@@ -115,10 +150,16 @@ class TranscriptionService:
 
         # Perform word alignment
         with LoggerTimingContext("Aligning to word-level timestamps", succ_log=True):
+            from whisperx.alignment import align
+
             # Comment/uncomment accordingly if you're testing
             # align_result = load_json(output_dir / "02_alignment.json")
-            align_result = self.wx_align(
-                trans_result["segments"], self.wx_align_model, self.align_metadata, audio, self.device
+            align_result = align(
+                trans_result["segments"],
+                self.wx_align_model,
+                self.align_metadata,
+                audio,
+                self.device,
             )
 
         # Save alignment result
@@ -140,5 +181,5 @@ class TranscriptionService:
         if self.device == "cuda":
             logger.debug("Cleaning up GPU memory on service destruction")
             gc.collect()
-            if self.torch_cuda:
-                self.torch_cuda.empty_cache()
+            if self._torch_cuda:
+                self._torch_cuda.empty_cache()

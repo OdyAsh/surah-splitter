@@ -18,8 +18,8 @@ from pydub import AudioSegment
 from dataclasses import asdict
 import shutil
 
-from surah_splitter.quran_toolkit.ayah_matcher import match_ayahs_to_transcription
-from surah_splitter.utils.app_logger import logger
+from surah_splitter_old.quran_toolkit.ayah_matcher import match_ayahs_to_transcription
+from surah_splitter_old.utils.app_logger import logger
 
 
 def _process_audio_file(

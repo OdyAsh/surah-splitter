@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import List, Dict, Tuple, Optional, Any, Union
 from dataclasses import asdict, dataclass
 
-from surah_splitter.utils.app_logger import logger
+from surah_splitter_old.utils.app_logger import logger
 
 
 @dataclass

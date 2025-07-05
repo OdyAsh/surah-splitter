@@ -27,9 +27,9 @@ from typing import List, Literal, Annotated
 from cyclopts import App, Parameter, validators
 from rich.console import Console
 
-from surah_splitter.quran_toolkit.surah_processor import process_surah
-from surah_splitter.utils.app_logger import logger
-from surah_splitter.utils.paths import OUTPUTS_PATH, QURAN_METADATA_PATH
+from surah_splitter_old.quran_toolkit.surah_processor import process_surah
+from surah_splitter_old.utils.app_logger import logger
+from surah_splitter_old.utils.paths import OUTPUTS_PATH, QURAN_METADATA_PATH
 
 # Create cyclopts app and rich console
 app = App(help="Process and split Quran audio files into individual ayahs.")

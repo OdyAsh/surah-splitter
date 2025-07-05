@@ -30,6 +30,7 @@ class PipelineService:
         ayah_numbers: Optional[list[int]] = None,
         model_name: str = "OdyAsh/faster-whisper-base-ar-quran",
         device: Optional[str] = None,
+        compute_type: Optional[str] = None,
         save_intermediates: bool = False,
         save_incoming_surah_audio: bool = False,
     ) -> Dict[str, Any]:
@@ -59,7 +60,7 @@ class PipelineService:
 
         # Step 1: Initialize transcription service
         logger.info("Initializing transcription service")
-        self.transcription_service.initialize(model_name, device)
+        self.transcription_service.initialize(model_name, device, compute_type)
 
         # Step 2: Transcribe audio
         logger.info(f"Transcribing audio: {audio_path}")

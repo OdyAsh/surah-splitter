@@ -53,6 +53,7 @@ def process_surah(
     model_name: Annotated[str, Parameter(name=["--model-name", "-mn"])] = "OdyAsh/faster-whisper-base-ar-quran",
     model_size: Annotated[Literal["tiny", "small", "medium", "large"], Parameter(name=["--model-size", "-ms"])] = "small",
     device: Annotated[Optional[Literal["cuda", "cpu"]], Parameter(name=["--device", "-d"])] = None,
+    compute_type: Annotated[Optional[str], Parameter(name=["--compute-type", "-ct"])] = None,
     output_dir: Annotated[Path, Parameter(name=["--output-dir", "-o"])] = OUTPUTS_PATH,
     save_intermediates: Annotated[bool, Parameter(name=["--save-intermediates", "-si"])] = False,
     save_incoming_surah_audio: Annotated[bool, Parameter(name=["--save-incoming-surah-audio", "-ssu"])] = False,
@@ -83,6 +84,7 @@ def process_surah(
             ayah_numbers=ayahs,
             model_name=model_name,
             device=device,
+            compute_type=compute_type,
             save_intermediates=save_intermediates,
             save_incoming_surah_audio=save_incoming_surah_audio,
         )
@@ -102,6 +104,7 @@ def transcribe_audio(
     output_file: Annotated[Optional[Path], Parameter(name=["--output-file", "-o"])] = None,
     model_name: Annotated[str, Parameter(name=["--model-name", "-mn"])] = "OdyAsh/faster-whisper-base-ar-quran",
     device: Annotated[Optional[Literal["cuda", "cpu"]], Parameter(name=["--device", "-d"])] = None,
+    compute_type: Annotated[Optional[str], Parameter(name=["--compute-type", "-ct"])] = None,
 ):
     """Transcribe an audio file and get word-level timestamps.
 
@@ -110,7 +113,7 @@ def transcribe_audio(
     try:
         # Create transcription service
         transcription_service = TranscriptionService()
-        transcription_service.initialize(model_name, device)
+        transcription_service.initialize(model_name, device, compute_type)
 
         # Transcribe audio
         result = transcription_service.transcribe(audio_file, output_file.parent if output_file else None)
