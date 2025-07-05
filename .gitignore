@@ -5,10 +5,11 @@
 # Folders
 __pycache__/
 
-# You have to do this weird syntax to ignore all files in `data` except for a file `surah_to_simple_ayahs.json` in one its subfolders.
+# You have to do this weird syntax to ignore all files in `data` except for a file `xxx.xxx` in one its subfolders.
 data/*
 !data/quran_metadata/
 data/quran_metadata/*
+!data/quran_metadata/quran_word_index.json
 !data/quran_metadata/surah_to_simple_ayahs.json
 !data/quran_metadata/sources.md
 

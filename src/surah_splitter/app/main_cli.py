@@ -19,6 +19,11 @@ Usage example (terminal):
     # Segment with existing timestamps
     python main_cli.py segment_audio -au "./data/input_surahs_to_split/adel_ryyan/076 Al-Insaan.mp3" -tf "./data/outputs/timestamps.json" -su 76 -re "adel_rayyan"
 ```
+
+TODO later 1: make the final output include the words' timestamps as well, not just the ayahs' timestamps (i.e., if save interm is false, then 03_..json is properlys saved).
+
+TODO later 2: Implement a quick UI that acts as data annotation tool for fixing words/ayahs' timestamps mentioned in the output files
+
 """
 
 from surah_splitter.utils.app_logger import logger
@@ -46,9 +51,9 @@ console = Console()
 def process_surah(
     ######### Required args #########
     audio_file: Annotated[Path, Parameter(name=["audio_file", "-au"])],
-    surah: Annotated[int, Parameter(name=["--surah", "-su"], validator=validators.Number(gte=1, lte=114))],
     reciter: Annotated[str, Parameter(name=["--reciter", "-re"])],
     ######### Optional args #########
+    surah: Annotated[Optional[int], Parameter(name=["--surah", "-su"], validator=validators.Number(gte=1, lte=114))] = None,
     ayahs: Annotated[Optional[str], Parameter(name=["--ayahs", "-ay"])] = None,
     model_name: Annotated[str, Parameter(name=["--model-name", "-mn"])] = "OdyAsh/faster-whisper-base-ar-quran",
     model_size: Annotated[Literal["tiny", "small", "medium", "large"], Parameter(name=["--model-size", "-ms"])] = "small",
@@ -97,9 +102,9 @@ def process_surah(
         model_name = model_name or model_size
         result = pipeline_service.process_surah(
             audio_path=audio_file,
-            surah_number=surah,
             reciter_name=reciter,
             output_dir=output_dir,
+            surah_number=surah,
             ayah_numbers=ayahs,
             model_name=model_name,
             device=device,
@@ -171,7 +176,7 @@ def transcribe_audio(
 @app.command(name="match_ayahs")
 def match_ayahs(
     transcription_file: Annotated[Path, Parameter(name=["transcription_file", "-tf"])],
-    surah: Annotated[int, Parameter(name=["--surah", "-su"], validator=validators.Number(gte=1, lte=114))],
+    surah: Annotated[Optional[int], Parameter(name=["--surah", "-su"], validator=validators.Number(gte=1, lte=114))] = None,
     ayahs: Annotated[Optional[str], Parameter(name=["--ayahs", "-ay"])] = None,
     output_file: Annotated[Optional[Path], Parameter(name=["--output-file", "-o"])] = None,
 ):
@@ -203,14 +208,26 @@ def match_ayahs(
         with open(transcription_file, "r", encoding="utf-8") as f:
             transcription_result = json.load(f)
 
+        # Extract reference ayahs
+        from surah_splitter.services.quran_metadata_service import QuranMetadataService
+
+        quran_service = QuranMetadataService()
+        surah_number, ayah_numbers, reference_ayahs = quran_service.get_ayahs(
+            surah, ayahs, transcription_result.get("transcription")
+        )
+        logger.debug(
+            f"Loaded {len(reference_ayahs)} reference ayahs for surah {surah_number}"
+            f"{' ayahs ' + ','.join(map(str, ayah_numbers)) if ayah_numbers else ''}"
+        )
+
         # Create ayah matching service
         matching_service = AyahMatchingService()
 
         # Match ayahs
         result = matching_service.match_ayahs(
             transcription_result,
-            surah,
-            ayahs,
+            reference_ayahs,
+            ayah_numbers,
             output_file.parent if output_file else None,
             save_intermediates=bool(output_file),
         )
@@ -237,8 +254,8 @@ def match_ayahs(
 def segment_audio(
     audio_file: Annotated[Path, Parameter(name=["audio_file", "-au"])],
     timestamps_file: Annotated[Path, Parameter(name=["timestamps_file", "-tf"])],
-    surah: Annotated[int, Parameter(name=["--surah", "-su"], validator=validators.Number(gte=1, lte=114))],
     reciter: Annotated[str, Parameter(name=["--reciter", "-re"])],
+    surah: Annotated[Optional[int], Parameter(name=["--surah", "-su"], validator=validators.Number(gte=1, lte=114))] = None,
     output_dir: Annotated[Path, Parameter(name=["--output-dir", "-o"])] = OUTPUTS_PATH,
     save_incoming_surah_audio: Annotated[bool, Parameter(name=["--save-incoming-surah-audio", "-ssu"])] = False,
 ):

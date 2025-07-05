@@ -10,6 +10,7 @@ from surah_splitter.services.ayah_matching_service import AyahMatchingService
 from surah_splitter.services.segmentation_service import SegmentationService
 from surah_splitter.services.quran_metadata_service import QuranMetadataService
 from surah_splitter.utils.app_logger import logger
+import shutil
 
 
 class PipelineService:
@@ -24,9 +25,9 @@ class PipelineService:
     def process_surah(
         self,
         audio_path: Path,
-        surah_number: int,
         reciter_name: str,
         output_dir: Path,
+        surah_number: Optional[int] = None,
         ayah_numbers: Optional[list[int]] = None,
         model_name: str = "OdyAsh/faster-whisper-base-ar-quran",
         device: Optional[str] = None,
@@ -56,12 +57,17 @@ class PipelineService:
             A dictionary containing the results of transcription, ayah matching,
             and segmentation.
         """
-        logger.info(f"Starting processing pipeline for surah {surah_number} by {reciter_name}")
+        logger.info(f"Starting processing pipeline for reciter {reciter_name}")
 
-        # Create timestamps directory if needed
+        # Create timestamps directory if needed - using temporary surah_number
         timestamps_dir = None
         if save_intermediates:
-            timestamps_dir = output_dir / reciter_name / "timestamps" / f"{surah_number:03d}"
+            if surah_number is None:
+                logger.warning("No surah number provided, using temporary directory")
+                temp_dir = output_dir / reciter_name / "timestamps" / "temp"
+            else:
+                temp_dir = output_dir / reciter_name / "timestamps" / f"{surah_number:03d}"
+            timestamps_dir = temp_dir
             timestamps_dir.mkdir(parents=True, exist_ok=True)
             logger.debug(f"Created timestamps directory: {timestamps_dir}")
 
@@ -74,10 +80,30 @@ class PipelineService:
         transcription_result = self.transcription_service.transcribe_and_align(audio_path, timestamps_dir)
         logger.success("Transcription completed")
 
-        # Step 3: Match ayahs to transcription
+        # Step 3: Get reference ayahs and metadata
+        logger.info("Loading reference ayahs")
+        surah_number, ayah_numbers, reference_ayahs = self.quran_service.get_ayahs(
+            surah_number, ayah_numbers, transcription_result.get("transcription")
+        )
+        logger.debug(
+            f"Loaded {len(reference_ayahs)} reference ayahs for surah {surah_number}{' ayahs ' + ','.join(map(str, ayah_numbers)) if ayah_numbers else ''}"
+        )
+
+        # Update timestamps directory with correct surah number if it was initially unknown
+        if save_intermediates and surah_number and timestamps_dir.name == "temp":
+            new_timestamps_dir = output_dir / reciter_name / "timestamps" / f"{surah_number:03d}"
+            new_timestamps_dir.mkdir(parents=True, exist_ok=True)
+            if timestamps_dir.exists():
+                for file in timestamps_dir.iterdir():
+                    shutil.copy2(file, new_timestamps_dir)
+                shutil.rmtree(timestamps_dir, ignore_errors=True)
+            timestamps_dir = new_timestamps_dir
+            logger.debug(f"Updated timestamps directory to: {timestamps_dir}")
+
+        # Step 4: Match ayahs to transcription
         logger.info("Matching ayahs to transcription")
         ayah_matching_result = self.ayah_matching_service.match_ayahs(
-            transcription_result, surah_number, ayah_numbers, timestamps_dir, save_intermediates
+            transcription_result, reference_ayahs, ayah_numbers, timestamps_dir, save_intermediates
         )
         logger.success("Ayah matching completed")
 

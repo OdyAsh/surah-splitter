@@ -9,7 +9,7 @@ from typing import List, Optional, Tuple
 
 from surah_splitter.utils.app_logger import logger
 from surah_splitter.services.quran_metadata_service import QuranMetadataService
-from surah_splitter.models.transcription import (
+from surah_splitter.models.all_models import (
     MatchedAyahsAndSpans,
     RecognizedSentencesAndWords,
     ReferenceWord,
@@ -28,7 +28,7 @@ class AyahMatchingService:
     def match_ayahs(
         self,
         transcription_result: RecognizedSentencesAndWords,
-        surah_number: int,
+        reference_ayahs: List[str],
         ayah_numbers: Optional[list[int]] = None,
         output_dir: Optional[Path] = None,
         save_intermediates: bool = False,
@@ -41,7 +41,7 @@ class AyahMatchingService:
 
         Args:
             transcription_result: Transcription result from the TranscriptionService.
-            surah_number: Surah number to match against.
+            reference_ayahs: List of reference ayah texts.
             ayah_numbers: Optional list of specific ayahs to match.
             output_dir: Directory to save intermediate files.
             save_intermediates: Whether to save intermediate files.
@@ -49,11 +49,7 @@ class AyahMatchingService:
         Returns:
             A dictionary containing ayah timestamps and alignment information.
         """
-        logger.info(f"Matching transcribed words to ayahs for surah {surah_number}")
-
-        # Get reference ayahs
-        reference_ayahs = self.quran_service.get_ayahs(surah_number, ayah_numbers)
-        logger.debug(f"Loaded {len(reference_ayahs)} reference ayahs for surah {surah_number}")
+        logger.info(f"Matching transcribed words to {len(reference_ayahs)} reference ayahs")
 
         # Extract recognized words from transcription
         recognized_words = self._extract_recognized_words(transcription_result)
@@ -114,7 +110,7 @@ class AyahMatchingService:
                 filename="09_ayah_timestamps.json" if save_intermediates else "ayah_timestamps.json",
             )
 
-        logger.success(f"Successfully matched {len(ayah_timestamps)} ayahs for surah {surah_number}")
+        logger.success(f"Successfully matched {len(ayah_timestamps)} ayahs")
 
         return {
             "ayah_timestamps": AyahTimestamp.list_to_dict_list(ayah_timestamps),

@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Optional
 import gc
 
-from surah_splitter.models.transcription import RecognizedSentencesAndWords
+from surah_splitter.models.all_models import RecognizedSentencesAndWords
 from huggingface_hub import snapshot_download
 
 # Quick fix to make `import load_model` load faster
@@ -16,7 +16,7 @@ from huggingface_hub.utils import _runtime
 _runtime._is_google_colab = False
 
 from surah_splitter.utils.app_logger import logger, LoggerTimingContext
-from surah_splitter.utils.file_utils import save_intermediate_json
+from surah_splitter.utils.file_utils import save_intermediate_json, load_json  # noqa: F401
 
 
 class TranscriptionService:
@@ -69,7 +69,7 @@ class TranscriptionService:
         logger.debug(f"Using device: {self.device}")
 
         if compute_type is None:
-            self.compute_type = "float16" if self._torch_cuda.is_available() else "int8"
+            self.compute_type = "float16" if self.device == "cuda" else "int8"
         else:
             self.compute_type = compute_type
         logger.debug(f"Using compute type: {self.compute_type}")
@@ -140,9 +140,11 @@ class TranscriptionService:
 
         # Perform transcription
         with LoggerTimingContext("Transcribing audio", succ_log=True):
+            # Comment/uncomment accordingly if you're testing
+            # trans_result = load_json(output_dir / "01_transcription.json")
             trans_result = self.wx_trans_model.transcribe(
                 audio,
-                batch_size=16,
+                batch_size=16,  # if not set, internally becomes 1
                 language="ar",
                 verbose=False,  # (output_dir is not None)
             )
