@@ -5,11 +5,11 @@ Service for orchestrating the complete processing pipeline.
 from pathlib import Path
 from typing import Dict, Any, Optional
 
-from surah_splitter_new.services.transcription_service import TranscriptionService
-from surah_splitter_new.services.ayah_matching_service import AyahMatchingService
-from surah_splitter_new.services.segmentation_service import SegmentationService
-from surah_splitter_new.services.quran_metadata_service import QuranMetadataService
-from surah_splitter_new.utils.app_logger import logger
+from surah_splitter.services.transcription_service import TranscriptionService
+from surah_splitter.services.ayah_matching_service import AyahMatchingService
+from surah_splitter.services.segmentation_service import SegmentationService
+from surah_splitter.services.quran_metadata_service import QuranMetadataService
+from surah_splitter.utils.app_logger import logger
 
 
 class PipelineService:

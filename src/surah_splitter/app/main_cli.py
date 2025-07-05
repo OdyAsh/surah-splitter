@@ -21,7 +21,7 @@ Usage example (terminal):
 ```
 """
 
-from surah_splitter_new.utils.app_logger import logger
+from surah_splitter.utils.app_logger import logger
 import sys
 import json
 from pathlib import Path
@@ -30,12 +30,12 @@ from typing import Literal, Annotated, Optional
 from cyclopts import App, Parameter, validators
 from rich.console import Console
 
-from surah_splitter_new.services.transcription_service import TranscriptionService
-from surah_splitter_new.services.ayah_matching_service import AyahMatchingService
-from surah_splitter_new.services.segmentation_service import SegmentationService
-from surah_splitter_new.services.pipeline_service import PipelineService
-from surah_splitter_new.utils.paths import OUTPUTS_PATH
-from surah_splitter_new.utils.file_utils import save_intermediate_json
+from surah_splitter.services.transcription_service import TranscriptionService
+from surah_splitter.services.ayah_matching_service import AyahMatchingService
+from surah_splitter.services.segmentation_service import SegmentationService
+from surah_splitter.services.pipeline_service import PipelineService
+from surah_splitter.utils.paths import OUTPUTS_PATH
+from surah_splitter.utils.file_utils import save_intermediate_json
 
 # Create cyclopts app and rich console
 app = App(help="Process and split Quran audio files into individual ayahs.")

@@ -4,7 +4,7 @@ import pytest
 from unittest.mock import MagicMock, patch
 from pathlib import Path
 
-from surah_splitter_new.services.transcription_service import TranscriptionService
+from surah_splitter.services.transcription_service import TranscriptionService
 
 
 @pytest.mark.unit

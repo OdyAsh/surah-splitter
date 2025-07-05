@@ -7,10 +7,10 @@ import numpy as np
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Tuple
 
-from surah_splitter_new.utils.app_logger import logger
-from surah_splitter_new.services.quran_metadata_service import QuranMetadataService
-from surah_splitter_new.models.alignment import ReferenceWord, SegmentedWordSpan, AyahTimestamp
-from surah_splitter_new.utils.file_utils import save_intermediate_json
+from surah_splitter.utils.app_logger import logger
+from surah_splitter.services.quran_metadata_service import QuranMetadataService
+from surah_splitter.models.alignment import ReferenceWord, SegmentedWordSpan, AyahTimestamp
+from surah_splitter.utils.file_utils import save_intermediate_json
 
 
 class AyahMatchingService:

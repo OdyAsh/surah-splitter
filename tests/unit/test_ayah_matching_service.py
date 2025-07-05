@@ -4,7 +4,7 @@ import pytest
 from unittest.mock import MagicMock, patch
 from pathlib import Path
 
-from surah_splitter_new.services.ayah_matching_service import AyahMatchingService
+from surah_splitter.services.ayah_matching_service import AyahMatchingService
 
 
 @pytest.mark.unit

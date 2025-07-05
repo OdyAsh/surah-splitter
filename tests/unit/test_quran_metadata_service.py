@@ -5,7 +5,7 @@ from pathlib import Path
 import json
 import shutil
 
-from surah_splitter_new.services.quran_metadata_service import QuranMetadataService
+from surah_splitter.services.quran_metadata_service import QuranMetadataService
 
 
 @pytest.fixture

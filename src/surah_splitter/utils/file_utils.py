@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 from typing import Dict, Any, Optional, TypeVar, List
 
-from surah_splitter_new.utils.app_logger import logger
+from surah_splitter.utils.app_logger import logger
 
 # Type variable for generic return type
 T = TypeVar("T", Dict[str, Any], List[Any])

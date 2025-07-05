@@ -4,7 +4,7 @@ import pytest
 from unittest.mock import MagicMock, patch
 from pathlib import Path
 
-from surah_splitter_new.services.pipeline_service import PipelineService
+from surah_splitter.services.pipeline_service import PipelineService
 
 
 @pytest.mark.integration

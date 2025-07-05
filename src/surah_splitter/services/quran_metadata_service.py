@@ -5,8 +5,8 @@ Service for accessing Quranic metadata.
 import json
 from typing import List, Optional
 
-from surah_splitter_new.utils.paths import QURAN_METADATA_PATH
-from surah_splitter_new.utils.file_utils import load_json
+from surah_splitter.utils.paths import QURAN_METADATA_PATH
+from surah_splitter.utils.file_utils import load_json
 
 
 class QuranMetadataService:

@@ -13,9 +13,9 @@ from huggingface_hub.utils import _runtime
 
 _runtime._is_google_colab = False
 
-from surah_splitter_new.models.transcription import Transcription, RecognizedWordSegment
-from surah_splitter_new.utils.app_logger import logger, LoggerTimingContext
-from surah_splitter_new.utils.file_utils import save_intermediate_json
+from surah_splitter.models.transcription import Transcription, RecognizedWordSegment
+from surah_splitter.utils.app_logger import logger, LoggerTimingContext
+from surah_splitter.utils.file_utils import save_intermediate_json
 
 
 class TranscriptionService:

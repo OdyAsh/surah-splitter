@@ -7,7 +7,7 @@ from typing import Dict, List, Optional
 import shutil
 from pydub import AudioSegment
 
-from surah_splitter_new.utils.app_logger import logger
+from surah_splitter.utils.app_logger import logger
 
 
 class SegmentationService:
