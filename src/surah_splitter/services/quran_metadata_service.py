@@ -4,22 +4,13 @@ Service for accessing Quranic metadata.
 
 import re
 from typing import List, Optional, Tuple
-from dataclasses import dataclass
+
+from whisperx.types import TranscriptionResult
 
 from surah_splitter.utils.app_logger import logger
 from surah_splitter.utils.paths import QURAN_METADATA_PATH
 from surah_splitter.utils.file_utils import load_json
-from whisperx.types import TranscriptionResult
-
-
-@dataclass
-class WordMatch:
-    """Represents a match for a word in the Quran."""
-
-    surah: int
-    ayah: int
-    position_wrt_surah: int  # Position of word within the surah
-    word: str
+from surah_splitter.models.all_models import WordMatch
 
 
 class QuranMetadataService:

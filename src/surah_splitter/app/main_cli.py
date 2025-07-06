@@ -20,9 +20,7 @@ Usage example (terminal):
     python main_cli.py segment_audio -au "./data/input_surahs_to_split/adel_ryyan/076 Al-Insaan.mp3" -tf "./data/outputs/timestamps.json" -su 76 -re "adel_rayyan"
 ```
 
-TODO later 1: make the final output include the words' timestamps as well, not just the ayahs' timestamps (i.e., if save interm is false, then 03_..json is properlys saved).
-
-TODO later 2: Implement a quick UI that acts as data annotation tool for fixing words/ayahs' timestamps mentioned in the output files
+TODO later: Implement a quick UI that acts as data annotation tool for fixing words/ayahs' timestamps mentioned in the output files
 
 """
 
@@ -40,7 +38,7 @@ from surah_splitter.services.ayah_matching_service import AyahMatchingService
 from surah_splitter.services.segmentation_service import SegmentationService
 from surah_splitter.services.pipeline_service import PipelineService
 from surah_splitter.utils.paths import OUTPUTS_PATH
-from surah_splitter.utils.file_utils import save_intermediate_json
+from surah_splitter.utils.file_utils import save_json
 
 # Create cyclopts app and rich console
 app = App(help="Process and split Quran audio files into individual ayahs.")
@@ -157,7 +155,7 @@ def transcribe_audio(
 
         # Save result if output specified
         if output_file:
-            save_intermediate_json(
+            save_json(
                 data=result,
                 output_dir=output_file.parent,
                 filename=output_file.name,
@@ -234,7 +232,7 @@ def match_ayahs(
 
         # Save result if output specified
         if output_file:
-            save_intermediate_json(
+            save_json(
                 data=result,
                 output_dir=output_file.parent,
                 filename=output_file.name,

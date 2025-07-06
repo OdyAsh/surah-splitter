@@ -12,7 +12,7 @@ from surah_splitter.utils.app_logger import logger
 T = TypeVar("T", Dict[str, Any], List[Any])
 
 
-def save_intermediate_json(
+def save_json(
     data: Dict[str, Any],
     output_dir: Path,
     filename: str,

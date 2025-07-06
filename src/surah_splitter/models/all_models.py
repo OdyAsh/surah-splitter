@@ -21,13 +21,33 @@ class MatchedAyahsAndSpans(TypedDict):
 
 
 @dataclass
+class WordMatch:
+    """Represents a match for a word in the Quran w.r.t its surah/ayah."""
+
+    surah: int
+    ayah: int
+    position_wrt_surah: int  # Position of word within the surah
+    word: str
+
+
+@dataclass
 class ReferenceWord(DataclassJsonMixin):
     """Represents a word from the ground truth text with position information."""
 
     word: str
     ayah_number: int
-    word_location_wrt_ayah: int
-    word_location_wrt_surah: int
+    position_wrt_surah: int = None
+    position_wrt_ayah: int = None
+
+
+@dataclass
+class RecognizedWord(DataclassJsonMixin):
+    """Represents a word recognized by WhisperX with timing information."""
+
+    word: str
+    start_time: float
+    end_time: float
+    score: float = None  # Confidence score, if available
 
 
 @dataclass

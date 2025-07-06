@@ -8,22 +8,22 @@ from pathlib import Path
 from typing import List, Optional, Tuple
 
 from surah_splitter.utils.app_logger import logger
-from surah_splitter.services.quran_metadata_service import QuranMetadataService
 from surah_splitter.models.all_models import (
     MatchedAyahsAndSpans,
     RecognizedSentencesAndWords,
+    RecognizedWord,
     ReferenceWord,
     SegmentedWordSpan,
     AyahTimestamp,
 )
-from surah_splitter.utils.file_utils import save_intermediate_json
+from surah_splitter.utils.file_utils import save_json
 
 
 class AyahMatchingService:
     """Service for matching transcribed words to reference ayahs."""
 
     def __init__(self):
-        self.quran_service = QuranMetadataService()
+        pass
 
     def match_ayahs(
         self,
@@ -62,13 +62,13 @@ class AyahMatchingService:
         # Save intermediates if requested
         if save_intermediates and output_dir:
             # Save recognized words
-            save_intermediate_json(
-                data=[{"word": w[0], "start": w[1], "end": w[2], "score": w[3]} for w in recognized_words],
+            save_json(
+                data=RecognizedWord.list_to_dict_list(recognized_words),
                 output_dir=output_dir,
                 filename="03_recognized_words.json",
             )
             # Save reference words
-            save_intermediate_json(
+            save_json(
                 data=ReferenceWord.list_to_dict_list(reference_words),
                 output_dir=output_dir,
                 filename="04_reference_words.json",
@@ -79,21 +79,21 @@ class AyahMatchingService:
 
         if save_intermediates and output_dir:
             # Also save as JSON for human readability
-            save_intermediate_json(data=cost_matrix.tolist(), output_dir=output_dir, filename="05_cost_matrix.json", indent=4)
-            save_intermediate_json(data=back_matrix.tolist(), output_dir=output_dir, filename="06_back_matrix.json", indent=4)
+            save_json(data=cost_matrix.tolist(), output_dir=output_dir, filename="05_cost_matrix.json", indent=4)
+            save_json(data=back_matrix.tolist(), output_dir=output_dir, filename="06_back_matrix.json", indent=4)
 
         # Trace back to get alignment
         alignment_with_ops = self._traceback_alignment(back_matrix)
 
         if save_intermediates and output_dir:
             # Save alignment indices
-            save_intermediate_json(data=alignment_with_ops, output_dir=output_dir, filename="07_alignment_with_ops.json")
+            save_json(data=alignment_with_ops, output_dir=output_dir, filename="07_alignment_with_ops.json")
 
         # Convert alignment indices to word spans
         word_spans = self._convert_to_word_spans(alignment_with_ops, recognized_words, reference_words)
 
         if save_intermediates and output_dir:  # Save word spans
-            save_intermediate_json(
+            save_json(
                 data=SegmentedWordSpan.list_to_dict_list(word_spans),
                 output_dir=output_dir,
                 filename="08_word_spans.json",
@@ -104,10 +104,21 @@ class AyahMatchingService:
 
         # Save ayah timestamps
         if output_dir:
-            save_intermediate_json(
+            save_json(
                 data=AyahTimestamp.list_to_dict_list(ayah_timestamps),
                 output_dir=output_dir,
                 filename="09_ayah_timestamps.json" if save_intermediates else "ayah_timestamps.json",
+            )
+            save_json(
+                data=SegmentedWordSpan.list_to_dict_list(
+                    word_spans,
+                    included_keys=["reference_words_segment", "start", "end"],
+                    key_names_mapping={
+                        "reference_words_segment": "word",
+                    },
+                ),
+                output_dir=output_dir,
+                filename="10_word_timestamps.json" if save_intermediates else "word_timestamps.json",
             )
 
         logger.success(f"Successfully matched {len(ayah_timestamps)} ayahs")
@@ -117,9 +128,7 @@ class AyahMatchingService:
             "word_spans": SegmentedWordSpan.list_to_dict_list(word_spans),
         }
 
-    def _extract_recognized_words(
-        self, alignment_result: RecognizedSentencesAndWords
-    ) -> List[Tuple[str, float, float, float]]:
+    def _extract_recognized_words(self, alignment_result: RecognizedSentencesAndWords) -> List[RecognizedWord]:
         """Extract recognized words from alignment result.
 
         Args:
@@ -127,7 +136,7 @@ class AyahMatchingService:
                 (internally: whisperx.align())
 
         Returns:
-            List of tuples (word, start_time, end_time, score)
+            List of RecognizedWord objects
         """
         word_segments = alignment_result.get("word_segments", [])
 
@@ -142,11 +151,11 @@ class AyahMatchingService:
                 continue
 
             recognized_words.append(
-                (
-                    word,
-                    segment["start"],  # Start time
-                    segment["end"],  # End time
-                    segment.get("score", 1.0),  # Confidence score
+                RecognizedWord(
+                    word=word,
+                    start_time=segment["start"],
+                    end_time=segment["end"],
+                    score=segment.get("score", None),
                 )
             )
 
@@ -202,17 +211,17 @@ class AyahMatchingService:
                     ReferenceWord(
                         word=word,
                         ayah_number=ayah_idx,
-                        word_location_wrt_ayah=word_idx,
+                        position_wrt_ayah=word_idx,
                         # TODO later: update this logic so that it works with ayah numbers
                         #   instead of just returning -1
-                        word_location_wrt_surah=len(reference_words) + 1 if not ayah_numbers else -1,
+                        position_wrt_surah=len(reference_words) + 1 if not ayah_numbers else -1,
                     )
                 )
 
         return reference_words
 
     def _compute_alignment_matrices(
-        self, recognized_words: List[Tuple[str, float, float, float]], reference_words: List[ReferenceWord]
+        self, recognized_words: List[RecognizedWord], reference_words: List[ReferenceWord]
     ) -> Tuple[np.ndarray, np.ndarray]:
         """Compute the cost and back matrices for alignment using dynamic programming.
 
@@ -251,7 +260,7 @@ class AyahMatchingService:
         # Fill the matrices
         for i in range(1, n):
             for j in range(1, m):
-                rec_word = recognized_words[i - 1][0]
+                rec_word = recognized_words[i - 1].word
                 ref_word = reference_words[j - 1].word
 
                 # Calculate costs
@@ -322,7 +331,7 @@ class AyahMatchingService:
     def _convert_to_word_spans(
         self,
         alignment_with_ops: List[Tuple[int, int, int]],
-        recognized_words: List[Tuple[str, float, float, float]],
+        recognized_words: List[RecognizedWord],
         reference_words: List[ReferenceWord],
         previous_ayahs_to_match: int = 0,
     ) -> List[SegmentedWordSpan]:
@@ -350,7 +359,7 @@ class AyahMatchingService:
                 last_match_ref_idx = ref_index
 
                 ref_word_obj = reference_words[ref_index]
-                rec_word_tuple = recognized_words[rec_index]
+                rec_word_obj = recognized_words[rec_index]
 
                 is_exact = operation == 3
 
@@ -362,9 +371,9 @@ class AyahMatchingService:
                         reference_index_start=ref_index,
                         reference_index_end=ref_index + 1,
                         reference_words_segment=ref_word_obj.word,
-                        input_words_segment=rec_word_tuple[0],
-                        start=rec_word_tuple[1],
-                        end=rec_word_tuple[2],
+                        input_words_segment=rec_word_obj.word,
+                        start=rec_word_obj.start_time,
+                        end=rec_word_obj.end_time,
                         flags=flags,
                         flags_info={
                             "matched_input": True,
@@ -381,8 +390,8 @@ class AyahMatchingService:
                     continue  # No context to look back from
 
                 rec_index = i - 1
-                rec_word_tuple = recognized_words[rec_index]
-                rec_word_to_rematch = rec_word_tuple[0]
+                rec_word_obj = recognized_words[rec_index]
+                rec_word_to_rematch = rec_word_obj.word
 
                 # Determine the search window
                 context_ayah = reference_words[last_match_ref_idx].ayah_number
@@ -419,9 +428,9 @@ class AyahMatchingService:
                             reference_index_start=ref_index,
                             reference_index_end=ref_index + 1,
                             reference_words_segment=ref_word_obj.word,
-                            input_words_segment=rec_word_tuple[0],
-                            start=rec_word_tuple[1],
-                            end=rec_word_tuple[2],
+                            input_words_segment=rec_word_obj.word,
+                            start=rec_word_obj.start_time,
+                            end=rec_word_obj.end_time,
                             flags=flags,
                             flags_info=flags_info,
                         )

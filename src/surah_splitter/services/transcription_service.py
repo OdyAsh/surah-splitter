@@ -16,7 +16,7 @@ from huggingface_hub.utils import _runtime
 _runtime._is_google_colab = False
 
 from surah_splitter.utils.app_logger import logger, LoggerTimingContext
-from surah_splitter.utils.file_utils import save_intermediate_json, load_json  # noqa: F401
+from surah_splitter.utils.file_utils import save_json, load_json  # noqa: F401
 
 
 class TranscriptionService:
@@ -151,7 +151,7 @@ class TranscriptionService:
 
         # Save transcription result
         if output_dir:
-            save_intermediate_json(data=trans_result, output_dir=output_dir, filename="01_transcription.json")
+            save_json(data=trans_result, output_dir=output_dir, filename="01_transcription.json")
 
         # Perform word alignment
         with LoggerTimingContext("Aligning to word-level timestamps", succ_log=True):
@@ -169,7 +169,7 @@ class TranscriptionService:
 
         # Save alignment result
         if output_dir:
-            save_intermediate_json(data=align_result, output_dir=output_dir, filename="02_alignment.json")
+            save_json(data=align_result, output_dir=output_dir, filename="02_alignment.json")
 
         # Create result dictionary
         result = {
