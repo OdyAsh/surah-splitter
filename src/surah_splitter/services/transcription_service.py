@@ -6,7 +6,6 @@ from pathlib import Path
 from typing import Optional
 import gc
 
-from surah_splitter.models.all_models import RecognizedSentencesAndWords
 from huggingface_hub import snapshot_download
 
 # Quick fix to make `import load_model` load faster
@@ -15,6 +14,7 @@ from huggingface_hub.utils import _runtime
 
 _runtime._is_google_colab = False
 
+from surah_splitter.models.all_models import RecognizedSentencesAndWords
 from surah_splitter.utils.app_logger import logger, LoggerTimingContext
 from surah_splitter.utils.file_utils import save_json, load_json  # noqa: F401
 
@@ -92,10 +92,25 @@ class TranscriptionService:
                     self.device,
                     compute_type=self.compute_type,
                     language="ar",
-                    vad_method="pyannote",  # pyannote/silero,
+                    vad_method="silero",  # pyannote/silero, default: pyannote
+                    # NOTE: The below options were an attempt to make the model repeat certain words that were not transcribed,
+                    # for example, قواريرا in Surah 76, but it didn't make a difference.
+                    # HOWEVER, what ACTUALLY made a difference is changing the vad_method above to silero instead of pyannote
+                    # so I might try different vad models in the future to see if they help with this...
+                    asr_options={
+                        # "compression_ratio_threshold": 10,  # default: 2.4
+                        # "condition_on_previous_text": True,  # default: False
+                    },
+                    # NOTE: if using "silero", then only vad_onset is used (since the actual silero models don't support it),
+                    #   and if using "pyannote", then both are used in Binarize() class,
+                    #   but not when loading the hyperparmeters of the pyannote VAD model itself
+                    #   (which is weird?)
+                    vad_options={
+                        "vad_onset": 0.2,
+                        # "vad_offset": 0.2,
+                    },
                 )
 
-            # Initialize audio loading function
             from whisperx.audio import load_audio
 
             self.wx_load_audio = load_audio
@@ -109,7 +124,8 @@ class TranscriptionService:
                     device=self.device,
                     # If `model_name` is not mentioned, it will use the default alignment model for `ar`, which is:
                     # jonatasgrosman/wav2vec2-large-xlsr-53-arabic/tree/main
-                    model_name="HamzaSidhu786/wav2vec2-base-word-by-word-quran-asr",
+                    # NOTE: Commented out for now, since the default model is tested to be better
+                    # model_name="HamzaSidhu786/wav2vec2-base-word-by-word-quran-asr",
                 )
 
         except Exception as e:
