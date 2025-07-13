@@ -181,6 +181,8 @@ class TranscriptionService:
                 self.align_metadata,
                 audio,
                 self.device,
+                print_progress=True,
+                combined_progress=False,
             )
 
         # Save alignment result

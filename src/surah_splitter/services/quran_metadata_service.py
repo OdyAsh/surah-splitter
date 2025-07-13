@@ -122,7 +122,10 @@ class QuranMetadataService:
         return surah_number, ayah_numbers, ayahs
 
     def detect_ayah_range_from_transcription(
-        self, transcription: TranscriptionResult, surah_number: Optional[int] = None
+        self,
+        transcription: TranscriptionResult,
+        surah_number: Optional[int] = None,
+        first_ayah_correction: bool = True,
     ) -> Tuple[Optional[int], Optional[int], Optional[int]]:
         """Detect ayah range from a WhisperX transcription using exact consecutive word matching.
 
@@ -137,6 +140,9 @@ class QuranMetadataService:
                 If None, uses a two-round detection:
                 1. First round: Identifies most likely surah by word match frequency
                 2. Second round: Focuses on detected surah to get precise ayah range
+            first_ayah_correction: If True, then if the function was initially going to return a start ayah of `2`,
+                it will correct itself by returning `1` instead;
+                this is helpful when surahs start with small ayahs that are hard to detect (e.g., surah `02`, etc.)
 
         Returns:
             Tuple of (surah_number, start_ayah, end_ayah). All values will be None if:
@@ -240,7 +246,12 @@ class QuranMetadataService:
             )
             return None, None, None
 
+        if first_ayah_correction and start_ayah == 2:
+            start_ayah = 1
+            logger.warning("Will start from ayah `1` instead of `2` due to `first_ayah_correction` flag)")
+
         logger.info(f"Determined range in surah {detected_surah}: ayahs {start_ayah} to {end_ayah}")
+
         return detected_surah, start_ayah, end_ayah
 
     def _find_consecutive_matches(
@@ -287,7 +298,7 @@ class QuranMetadataService:
             if len(seq) >= 2:
                 # When searching all surahs, log surah number for better context
                 surah_info = "" if target_surah else f" in surah {seq[0].surah}"
-                logger.info(f"Saving sequence of length {len(seq)}{surah_info}: {[m.word for m in seq]}")
+                logger.trace(f"Saving sequence of length {len(seq)}{surah_info}: {[m.word for m in seq]}")
                 sequences.append(seq[:])
 
         def find_best_continuation(word_matches: List[WordMatch], last_match: WordMatch) -> Optional[WordMatch]:
@@ -376,7 +387,7 @@ class QuranMetadataService:
         logger.info(f"Found {len(matches)} sequences")
         for i, seq in enumerate(matches, 1):
             surah_info = f" in surah {seq[0].surah}" if not target_surah else ""
-            logger.info(f"Sequence {i}: {len(seq)} words{surah_info}, starts at ayah {seq[0].ayah}")
+            logger.trace(f"Sequence {i}: {len(seq)} words{surah_info}, starts at ayah {seq[0].ayah}")
 
         return matches
 
@@ -445,7 +456,7 @@ class QuranMetadataService:
                 surah_to_matches[surah] = set()
             sequence_ayahs = set(m.ayah for m in sequence)
             surah_to_matches[surah].update(sequence_ayahs)
-            logger.debug(f"Sequence ayahs in surah {surah}: {sorted(sequence_ayahs)}, " f"words: {[m.word for m in sequence]}")
+            logger.trace(f"Sequence ayahs in surah {surah}: {sorted(sequence_ayahs)}, " f"words: {[m.word for m in sequence]}")
 
         # Find the longest sequence in each surah, allowing gaps up to max_allowed_gap ayahs
         best_surah = None
@@ -476,7 +487,7 @@ class QuranMetadataService:
                     # Start new sequence
                     current_start = sorted_ayahs[i]
                     current_length = 1
-                    logger.debug(f"Gap too large: {last_ayah} to {sorted_ayahs[i]} (gap of {gap-1} ayahs)")
+                    logger.trace(f"Gap too large: {last_ayah} to {sorted_ayahs[i]} (gap of {gap-1} ayahs)")
 
                 last_ayah = sorted_ayahs[i]
 

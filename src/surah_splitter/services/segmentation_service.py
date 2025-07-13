@@ -3,7 +3,7 @@ Service for segmenting audio based on ayah timestamps.
 """
 
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List
 import shutil
 from pydub import AudioSegment
 
@@ -58,19 +58,20 @@ class SegmentationService:
             surah_audio_dir.mkdir(parents=True, exist_ok=True)
             surah_audio_path = surah_audio_dir / f"{surah_number:03d}.mp3"
 
-            logger.debug(f"Saving original surah audio to {surah_audio_path}")
+            logger.info(f"Saving original surah audio to {surah_audio_path}")
 
             # Use shutil.copy2 to preserve metadata
             shutil.copy2(audio_path, surah_audio_path)
 
         # Split audio by ayahs
+        logger.info(f"Writing ayah audio files to {ayah_audio_dir}")
         output_paths = {}
         for timestamp in ayah_timestamps:
             ayah_number = timestamp["ayah_number"]
             start_ms = timestamp["start_time"] * 1000  # Convert to milliseconds to accurately save segment
             end_ms = timestamp["end_time"] * 1000
 
-            logger.debug(f"Processing ayah {ayah_number}, time range: {start_ms/1000:.2f}s - {end_ms/1000:.2f}s")
+            logger.trace(f"Writing audio of ayah {ayah_number}, time range: {start_ms/1000:.2f}s - {end_ms/1000:.2f}s")
 
             # Extract segment
             segment = audio[start_ms:end_ms]
